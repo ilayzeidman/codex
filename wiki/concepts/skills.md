@@ -42,14 +42,15 @@ binary or requiring a tool definition per workflow.
 - Data model: `codex-rs/core-skills/src/model.rs:11` — `SkillMetadata`,
   `SkillScope`, `SkillLoadOutcome`.
 - Discovery + parsing: `codex-rs/core-skills/src/loader.rs:159` —
-  `load_skills_from_roots`, `discover_skills_under_root`,
-  `extract_frontmatter` (`:599`).
+  `load_skills_from_roots`; `discover_skills_under_root` (`:456`);
+  `parse_skill_file` (`:599`); `extract_frontmatter` (`:957`).
 - Caching/lifecycle: `codex-rs/core-skills/src/manager.rs:51` —
-  `SkillsManager::skills_for_config`, `skill_roots_for_config`.
-- Prompt rendering: `codex-rs/core-skills/src/render.rs:62` —
-  `build_available_skills`, the `<skills_instructions>` envelope.
-- On-demand injection: `codex-rs/core-skills/src/injection.rs:24` —
-  `SkillInjection`, `build_skill_injections`.
+  `SkillsManager`; `skills_for_config` at `:90`.
+- Prompt rendering: `codex-rs/core-skills/src/render.rs:160` —
+  `build_available_skills`. The `<skills_instructions>` envelope tags
+  come from `codex-rs/protocol/src/protocol.rs:96`.
+- On-demand injection: `codex-rs/core-skills/src/injection.rs:25` —
+  `SkillInjection`; `build_skill_injections` at `:31`.
 - Implicit invocation indexes: `codex-rs/core-skills/src/invocation_utils.rs`.
 - Embedded system skills: `codex-rs/skills/src/lib.rs:32` —
   `install_system_skills` (extracts `src/assets/samples/` to disk).
@@ -99,7 +100,7 @@ metadata:
 (markdown body — workflow instructions for the model)
 ```
 
-`extract_frontmatter` (`loader.rs:599`) requires the leading `---` block;
+`extract_frontmatter` (`loader.rs:957`) requires the leading `---` block;
 missing frontmatter raises `SkillParseError::MissingFrontmatter`. If `name`
 is omitted the loader falls back to the parent directory name. Optional
 `agents/openai.yaml` alongside the skill directory carries the `interface`,
@@ -110,7 +111,8 @@ is omitted the loader falls back to the parent directory name. Optional
 `SkillsManager::skills_for_config` resolves the skill root list from the
 config layer stack, then `load_skills_from_roots` walks each root.
 
-Roots, in scope order (`loader.rs:248`):
+Roots, in scope order (`loader.rs:267` `skill_roots_from_layer_stack_inner`,
+plus repo roots from `repo_agents_skill_roots` at `:342`):
 
 1. **Repo** — `.agents/skills/` in the project root and its ancestors up to
    the workspace boundary. Uses the repo's `ExecutorFileSystem`.
@@ -139,9 +141,11 @@ There are two surfaces:
 
 ### 1. Catalog injection (every turn)
 
-`render.rs:62` (`build_available_skills`) renders the discovered skills
-into a markdown block wrapped in `<skills_instructions>` … `</skills_instructions>`
-(tags from `protocol/src/protocol.rs:96`). It includes:
+`render.rs:160` (`build_available_skills`) selects skills for the prompt;
+the actual body is rendered by `render_available_skills_body` (`render.rs:62`),
+wrapped in `<skills_instructions>` … `</skills_instructions>` by the
+session before injection (tags from `protocol/src/protocol.rs:96`).
+It includes:
 
 - A skill-roots alias table (when used) so paths can be referenced as
   short prefixes without spending tokens on absolute paths.
