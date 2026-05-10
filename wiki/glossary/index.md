@@ -83,6 +83,6 @@ links to the page where the term is the *primary* subject.
   [sessions & rollouts](../concepts/sessions-rollouts.md#state-db).
 - **Tool gate** — see *mutation gate*.
 - **Tool registry** — runtime collection of `ToolHandler` instances.
-  See [tools](../concepts/tools.md#tool-registration--registry).
+  See [tools](../concepts/tools.md#dispatch-loop).
 - **Turn** — one user submission → completed model response cycle.
   See [turn loop](../operations/turn-loop.md).

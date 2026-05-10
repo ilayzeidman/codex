@@ -40,29 +40,31 @@ just appended.
 
 ## Where it lives in the code
 
-- In-memory history: `codex-rs/core/src/context_manager/history.rs:32` —
-  `ContextManager`, `record_items` (`:71`), `for_prompt` (`:98`).
+- In-memory history: `codex-rs/core/src/context_manager/history.rs:34` —
+  `ContextManager`, `record_items` (`:99`), `for_prompt` (`:119`).
 - Settings-diff machinery: `codex-rs/core/src/context_manager/updates.rs` —
   `build_model_instructions_update_item`, etc.
 - Turn input assembly: `codex-rs/core/src/session/mod.rs:2567` —
   `build_initial_context`.
 - Recording responses back: `codex-rs/core/src/session/mod.rs:2415` —
   `record_conversation_items`.
-- Prompt struct: `codex-rs/core/src/client_common.rs:27`.
-- Inline compaction: `codex-rs/core/src/compact.rs:69`.
-- Remote compaction: `codex-rs/core/src/compact_remote.rs:41` (decision),
-  `:255` (history replacement).
+- Prompt struct: `codex-rs/core/src/client_common.rs:28`.
+- Inline compaction: `codex-rs/core/src/compact.rs:69`
+  (`run_inline_auto_compact_task`).
+- Remote compaction: `codex-rs/core/src/compact_remote.rs:60`
+  (`run_remote_compact_task`), `:255` (`process_compacted_history`),
+  `:292` (`should_keep_compacted_history_item`).
 - AGENTS.md discovery: `codex-rs/core/src/agents_md.rs:1`, with
   separator `--- project-doc ---` at `:43`.
 - Persistent message history: `codex-rs/message-history/src/lib.rs:1`.
 - Rollout: `codex-rs/rollout/src/recorder.rs`, `codex-rs/rollout/src/lib.rs`.
-- Trace: `codex-rs/rollout-trace/src/compaction.rs:30`.
+- Trace: `codex-rs/rollout-trace/src/compaction.rs`.
 - Memories: `codex-rs/memories/README.md`.
 
 ## Model / data types
 
 ```rust
-// client_common.rs:27
+// client_common.rs:28
 pub struct Prompt {
     pub input: Vec<ResponseItem>,
     pub tools: Vec<ToolSpec>,
@@ -75,7 +77,7 @@ pub struct Prompt {
 ```
 
 ```rust
-// context_manager/history.rs:32
+// context_manager/history.rs:34
 struct ContextManager {
     items: Vec<ResponseItem>,            // oldest → newest
     history_version: u64,                // bumped on rewrite
@@ -89,12 +91,12 @@ context: `Message`, `Compaction`, `ContextCompaction`, `Reasoning`,
 `FunctionCall`, `CustomToolCall`, their outputs, `LocalShellCall`,
 `WebSearchCall`, `ImageGenerationCall`, etc.
 
-`TurnContext` (`session/turn_context.rs:54`) carries the per-turn
+`TurnContext` (`session/turn_context.rs:55`) carries the per-turn
 parameters: `sub_id`, `model_info` (with `context_window`),
-`developer_instructions`, `user_instructions`, `compact_prompt`,
-`truncation_policy`, and `dynamic_tools`.
+`developer_instructions`, `user_instructions`, `truncation_policy`,
+and other turn-scoped fields.
 
-`TotalTokenUsageBreakdown` (`context_manager/history.rs:52`) tracks:
+`TotalTokenUsageBreakdown` (`context_manager/history.rs:54`) tracks:
 - `last_api_response_total_tokens`
 - `all_history_items_model_visible_bytes`
 - `estimated_tokens_of_items_added_since_last_successful_api_response`
@@ -102,7 +104,7 @@ parameters: `sub_id`, `model_info` (with `context_window`),
 
 Token estimation is byte-heuristic, not tokenizer-accurate
 (`approx_token_count` / `approx_bytes_for_tokens`,
-`context_manager/history.rs:135`).
+`context_manager/history.rs:135` `estimate_token_count`).
 
 ## Turn input assembly
 
@@ -117,9 +119,12 @@ otherwise noted):
 1. Model-instructions update (when model switches, `<model_switch>`).
 2. Permissions instructions (if enabled).
 3. Developer instructions from `turn_context.developer_instructions`.
-4. Memory tool developer instructions (loaded from
-   `~/.codex/memories/read/templates/memories/read_path.md`,
-   `session/mod.rs:2627`).
+4. Memory tool developer instructions, gated by
+   `Feature::MemoryTool` and `config.memories.use_memories`
+   (`session/mod.rs:2625`–`:2632`); the prompt is rendered from the
+   embedded template at `codex-rs/memories/read/templates/memories/read_path.md`
+   (loaded via `include_str!` in
+   `codex-rs/memories/read/src/prompts.rs:12`).
 5. Collaboration-mode instructions.
 6. Realtime-mode update (if a realtime session is active).
 7. Personality spec (when not baked into the model).
@@ -142,9 +147,9 @@ otherwise noted):
 
 ## History pipeline
 
-`ContextManager.record_items` (`history.rs:71`) is the single entry for
+`ContextManager.record_items` (`history.rs:99`) is the single entry for
 new items: it processes (truncating function outputs per policy), filters
-non-API messages, and appends. `for_prompt` (`:98`) normalizes the
+non-API messages, and appends. `for_prompt` (`:119`) normalizes the
 history for the API and strips images if the current model's input
 modalities don't include `Image`.
 
@@ -164,22 +169,25 @@ implementations live side-by-side:
 
 - **Inline** (`compact.rs:69`, `run_inline_auto_compact_task`) — reuses
   the Responses API: prompt the model with `templates/compact/prompt.md`
-  (`SUMMARIZATION_PROMPT`) and `templates/compact/summary_prefix.md`
-  (`SUMMARY_PREFIX`). User messages truncated at
-  `COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000` (`compact.rs:48`).
-- **Remote** (`compact_remote.rs:41`, `run_remote_compact_task`) — calls
+  (`SUMMARIZATION_PROMPT`, `compact.rs:46`) and
+  `templates/compact/summary_prefix.md` (`SUMMARY_PREFIX`, `:47`). User
+  messages truncated at `COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000`
+  (`compact.rs:48`).
+- **Remote** (`compact_remote.rs:60`, `run_remote_compact_task`) — calls
   a dedicated `/compact` endpoint that returns a replacement history.
 
-When the replacement history comes back (`compact_remote.rs:255`), the
-pipeline:
+When the replacement history comes back, `process_compacted_history`
+(`compact_remote.rs:255`) and the surrounding install path
+(`compact_remote.rs:230`–`:248`) do:
 
-1. **Filters** via `should_keep_compacted_history_item`: drops
-   `developer` role messages (stale/duplicated session prefix), drops
-   non-user-content `user` messages, keeps `assistant`, user-role
-   warnings, and the compaction summaries themselves.
-2. **Re-injects initial context** if mid-turn (`compact_remote.rs:264`)
-   above the last real user message, so the post-compaction model still
-   sees current settings.
+1. **Filters** via `should_keep_compacted_history_item`
+   (`compact_remote.rs:292`): drops `developer` role messages
+   (stale/duplicated session prefix), drops non-user-content `user`
+   messages, keeps `assistant`, user-role warnings, and the compaction
+   summaries themselves.
+2. **Re-injects initial context** if mid-turn
+   (`compact_remote.rs:264`–`:271`) above the last real user message,
+   so the post-compaction model still sees current settings.
 3. **Installs a checkpoint** in the rollout trace (`:242`).
 4. **Replaces live history** via `sess.replace_compacted_history()`
    (`:246`).
@@ -188,7 +196,7 @@ pipeline:
 The injection mode is explicit:
 
 ```rust
-// compact.rs:50
+// compact.rs:60
 enum InitialContextInjection {
     BeforeLastUserMessage,  // mid-turn: re-inject into replacement
     DoNotInject,            // pre-turn/manual: clear reference snapshot
@@ -197,7 +205,8 @@ enum InitialContextInjection {
 
 `PreCompact` and `PostCompact` hooks (see [hooks](hooks.md)) wrap the
 operation and may abort or transform the replacement
-(`compact.rs:139`).
+(`compact.rs:139` runs `run_pre_compact_hooks`; `:160` runs
+`run_post_compact_hooks`).
 
 ## AGENTS.md and per-project memory
 
@@ -221,9 +230,12 @@ The two-phase memories pipeline (see `codex-rs/memories/README.md`):
   is dirty.
 
 Memory output is exposed to the model as a developer instruction block
-loaded from `~/.codex/memories/read/templates/memories/read_path.md`
-(`session/mod.rs:2627`), gated by the `MemoryTool` feature flag and
-the `use_memories` config option.
+rendered by `build_memory_tool_developer_instructions`
+(`codex-rs/memories/read/src/prompts.rs:28`) from the embedded template
+`codex-rs/memories/read/templates/memories/read_path.md`. The block is
+substituted with `memory_summary.md` from `$CODEX_HOME/memories/`. It is
+gated by the `MemoryTool` feature flag and the `use_memories` config
+option (`session/mod.rs:2626`).
 
 ## Persistent message history
 
@@ -237,18 +249,21 @@ to `~/.codex/history.jsonl` with one record per line:
 Atomicity is achieved by writing each full line in a single `write(2)`
 under `O_APPEND` (POSIX guarantees atomic writes ≤ `PIPE_BUF`). An
 advisory lock with a 10-attempt × 100 ms retry loop avoids interleaving
-concurrent processes (`message-history/src/lib.rs:47`). When the file
-exceeds `max_bytes`, it's trimmed to an 80 % soft cap (`:262`) so
-trims don't run on every append.
+concurrent processes (`message-history/src/lib.rs:50`–`:51`,
+`MAX_RETRIES`/`RETRY_SLEEP`). When the file exceeds `max_bytes`,
+`enforce_history_limit` (`:187`) trims it to an 80 % soft cap
+(`HISTORY_SOFT_CAP_RATIO = 0.8` at `:48`, applied at `:263`) so trims
+don't run on every append.
 
 ## Rollout persistence
 
-`RolloutRecorder` (`rollout/src/recorder.rs`) is an async channel writer:
-producers send `RolloutCmd::{AddItems, Persist, Flush, Shutdown}` and a
-spawned `RolloutWriterTask` appends to
-`~/.codex/sessions/rollout-YYYY-MM-DDTHH-MM-SS-<uuid>.jsonl`.
+`RolloutRecorder` (`rollout/src/recorder.rs:82`) is an async channel
+writer: producers send `RolloutCmd::{AddItems, Persist, Flush, Shutdown}`
+(`recorder.rs:106`) and a spawned `RolloutWriterTask` (`:121`) appends to
+`~/.codex/sessions/YYYY/MM/DD/rollout-YYYY-MM-DDTHH-MM-SS-<uuid>.jsonl`
+(filename built at `recorder.rs:1378`–`:1397`).
 
-`EventPersistenceMode` (`recorder.rs:196`) toggles between:
+`EventPersistenceMode` (`rollout/src/policy.rs:6`) toggles between:
 - `Limited` — minimal replay surface (legacy).
 - `Extended` — richer event surface needed for app-server history
   reconstruction.

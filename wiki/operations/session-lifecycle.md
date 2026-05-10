@@ -25,11 +25,11 @@ machinery — bootstrap, state handles, persistence, teardown.
 
 ### 1. Creation
 
-`thread-store/src/types.rs:30` (`CreateThreadParams`) carries:
+`thread-store/src/types.rs:45` (`CreateThreadParams`) carries:
 
-- `cwd` — working directory.
-- `model_provider` — which provider/model to use.
-- `memory_mode` — opt-in for the memory pipeline.
+- `id`, `source`, `cwd`, `originator`.
+- `event_persistence_mode` — `Limited` vs `Extended`.
+- `forked_from_id` — optional; non-`None` for forks (see below).
 
 The session bootstraps:
 
@@ -63,9 +63,11 @@ See [turn loop](turn-loop.md).
 
 A fork branches a new session from a known rollout point:
 
-- `ForkParams { forked_from_id, fork_point }` (in
-  `thread-store/src/types.rs`).
-- The new session copies the prefix up to `fork_point`, then opens a
+- The thread-store API expresses fork via `CreateThreadParams.forked_from_id`
+  (`thread-store/src/types.rs:45`); the cross-process wire type is
+  `ThreadForkParams` in `app-server-protocol` (used by the app-server
+  `thread/fork` RPC).
+- The new session copies the prefix up to the fork point, then opens a
   fresh rollout.
 - The graph store records the parent edge (see
   [multi-agent](../concepts/multi-agent.md)).
@@ -80,11 +82,11 @@ A fork branches a new session from a known rollout point:
 
 ## State references
 
-- `Session` — `codex-rs/core/src/session/session.rs:11` — runtime
+- `Session` — `codex-rs/core/src/session/session.rs:14` — runtime
   context (config, providers, hooks, sandbox, history).
-- `SessionConfiguration` — `session/session.rs:64` — approval policy,
+- `SessionConfiguration` — `session/session.rs:40` — approval policy,
   permission profile, model, memory mode, etc.
-- `TurnContext` — `session/turn_context.rs:54` — per-turn parameters
+- `TurnContext` — `session/turn_context.rs:55` — per-turn parameters
   derived from `Session`.
 
 ## Edge cases & invariants
@@ -98,6 +100,14 @@ A fork branches a new session from a known rollout point:
 - Forks share the rollout *prefix* logically but have an independent
   file on disk; the prefix is materialized at load time, not by
   copying file bytes.
+
+## Open questions / gaps
+
+- Exact bootstrap order (skills vs MCP vs plugins) in `Session::new`
+  — this page narrates the conceptual order, not the literal task
+  graph.
+- Resume semantics when MCP servers required at original session
+  start are no longer reachable.
 
 ## See also
 

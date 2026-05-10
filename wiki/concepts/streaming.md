@@ -18,9 +18,10 @@ last_reviewed: 2026-05-10
 
 Cloud model providers stream responses over Server-Sent Events.
 `codex-client` owns the HTTP layer (with retry, custom CAs, and
-telemetry); `sse_stream` (`codex-client/src/sse.rs:9`) parses raw
+telemetry); `sse_stream` (`codex-client/src/sse.rs:12`) parses raw
 streams into UTF-8 frames; `core/src/stream_events_utils.rs` consumes
-output items and produces incremental UI events.
+output items and produces incremental UI events
+(`handle_output_item_done` at `:223`).
 
 ## Where it lives in the code
 
@@ -28,7 +29,7 @@ output items and produces incremental UI events.
   `default_client.rs`, `request.rs`.
 - Custom CAs / TLS: `codex-rs/codex-client/src/custom_ca.rs`.
 - Retry: `codex-rs/codex-client/src/retry.rs`.
-- SSE parser: `codex-rs/codex-client/src/sse.rs:9` — `sse_stream`
+- SSE parser: `codex-rs/codex-client/src/sse.rs:12` — `sse_stream`
   with idle-timeout and error handling.
 - Telemetry: `codex-rs/codex-client/src/telemetry.rs`.
 - Output-item consumer: `codex-rs/core/src/stream_events_utils.rs` —

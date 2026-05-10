@@ -41,10 +41,10 @@ ResponseItem (function_call|tool_search|local_shell|custom_tool|mcp)
                               ▼  registry.rs:355  PreToolUse hooks
                               │
                               ▼  registry.rs:370  is_mutating?
-                              ▼  orchestrator.rs:57  acquire mutation gate
+                              ▼  registry.rs:386  acquire tool-call gate
                               │
-                              ▼  orchestrator.rs:57  begin network approval
-                              ▼  orchestrator.rs:57  build SandboxAttempt
+                              ▼  orchestrator.rs:127 ToolOrchestrator::run
+                              ▼  orchestrator.rs:57  run_attempt
                               ▼  sandbox::run
                               │
                               ▼  registry.rs:391  handler.handle(invocation)
@@ -82,9 +82,10 @@ ResponseItem (function_call|tool_search|local_shell|custom_tool|mcp)
 
 5. **Mutation gate** — `registry.rs:370` consults
    `handler.is_mutating(&invocation)`. Mutating handlers serialize
-   through the orchestrator's tool-gate.
+   through `invocation.turn.tool_call_gate` (`registry.rs:386`).
 
-6. **Approval & sandbox** — `orchestrator.rs:57`:
+6. **Approval & sandbox** — `orchestrator.rs:127`
+   (`ToolOrchestrator::run`), with the inner `run_attempt` at `:57`:
    - Begin a deferred network approval if needed.
    - Build a `SandboxAttempt` with the requested permission profile.
    - Run the handler under the platform sandbox

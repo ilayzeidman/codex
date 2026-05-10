@@ -46,12 +46,14 @@ remote tool.
 - Invocation context: `codex-rs/core/src/tools/context.rs:48` —
   `ToolInvocation`, `ToolPayload` (`:60`), `ToolOutput` (`:92`).
 - Sandbox + approval: `codex-rs/core/src/tools/sandboxing.rs:1`,
-  `codex-rs/core/src/tools/orchestrator.rs:41`.
+  `codex-rs/core/src/tools/orchestrator.rs:41` (`ToolOrchestrator`),
+  `:127` (`run`), `:57` (`run_attempt`).
 - Spec assembly: `codex-rs/core/src/tools/spec_plan.rs:69` —
-  `register_builtin_tools`.
+  `build_tool_registry_builder`.
 - Handler enumeration: `codex-rs/core/src/tools/handlers/mod.rs:1`.
-- Schema primitives: `codex-rs/tools/src/json_schema.rs:14`,
-  `tools/src/tool_spec.rs:17`, `tools/src/responses_api.rs:142`.
+- Schema primitives: `codex-rs/tools/src/json_schema.rs:15`
+  (`JsonSchemaPrimitiveType`), `tools/src/tool_spec.rs:17` (`ToolSpec`),
+  `tools/src/responses_api.rs:142` (`tool_definition_to_responses_api_tool`).
 - Serialization for the wire: `tools/src/tool_spec.rs:100` —
   `create_tools_json_for_responses_api`.
 
@@ -126,8 +128,9 @@ From `core/src/tools/handlers/mod.rs:1`:
 | `plan` | `PlanHandler` | `handlers/plan.rs:47` |
 | `test_sync` | `TestSyncHandler` | `handlers/test_sync.rs:59` |
 
-`spec_plan.rs:69` is the central place that constructs handlers and
-registers them with `ToolRegistryBuilder` (`registry.rs:497`).
+`spec_plan.rs:69` (`build_tool_registry_builder`) is the central place
+that constructs handlers and registers them with `ToolRegistryBuilder`
+(`registry.rs:497`).
 
 ## Dispatch loop
 
@@ -147,10 +150,11 @@ registry.rs):
 5. **Mutation gate** — `registry.rs:370` calls `handler.is_mutating`;
    if mutating, the orchestrator serializes through a "tool gate" so
    only one mutator runs at a time.
-6. **Approval / sandbox** — `orchestrator.rs:57` opens a network
-   approval (if needed), creates a `SandboxAttempt`, runs the handler
-   inside, and on denial escalates and retries (decisions cached in
-   `ApprovalStore`, `sandboxing.rs:42`, so the user is not re-prompted).
+6. **Approval / sandbox** — `orchestrator.rs:127` (`ToolOrchestrator::run`)
+   opens a network approval (if needed), creates a `SandboxAttempt`,
+   runs the handler inside via `run_attempt` (`:57`), and on denial
+   escalates and retries (decisions cached in `ApprovalStore`,
+   `sandboxing.rs:42`, so the user is not re-prompted).
 7. **Execute** — `handler.handle(invocation)` returns a `ToolOutput`.
 8. **Post-tool-use hooks** — `registry.rs:420` runs `PostToolUse` hooks,
    which may attach extra context or stop further execution.
@@ -167,7 +171,8 @@ handlers with different `Output` types.
 final spec list for the OpenAI Responses API. Specs come from:
 
 - Built-in handlers' `spec()` (collected by `ToolRegistryBuilder`).
-- Code-mode augmentation if enabled (`router.rs:513`).
+- Code-mode augmentation if enabled (`spec_plan.rs:76`–`:111`,
+  gated by `config.code_mode_enabled`).
 - Dynamic tools parsed via `parse_dynamic_tool` →
   `tool_definition_to_responses_api_tool` (`responses_api.rs:142`),
   used by app-server clients to register custom tools.
@@ -189,9 +194,10 @@ the model is given a Lark grammar and emits a textual patch.
   add_hunk: "*** Add File: " filename LF add_line+
   ...
   ```
-- Streaming parse: `apply_patch.rs:33` — `StreamingPatchParser` consumes
-  diffs incrementally and emits `PatchApplyUpdatedEvent` so the TUI can
-  render the diff progressively.
+- Streaming parse: `apply_patch.rs:38` imports `StreamingPatchParser`
+  from `codex-apply-patch`, used as a field of the parser state at
+  `:59`; `push_delta` (`:86`) emits `PatchApplyUpdatedEvent` so the
+  TUI can render the diff progressively.
 - The handler validates paths against the sandbox FS before applying.
 
 ## MCP-bridged tools

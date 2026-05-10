@@ -31,27 +31,36 @@ sessions for listing and memory job leasing.
 
 ## Where it lives in the code
 
-- Module entry: `codex-rs/rollout/src/lib.rs:21` — `RolloutConfig`,
-  `RolloutRecorder`, `EventPersistenceMode`.
-- Async writer: `rollout/src/recorder.rs:72` — `RolloutWriterTask`,
-  `RolloutCmd { AddItems, Persist, Flush, Shutdown }`.
-- Header / metadata: `rollout/src/metadata.rs` — `SessionMetaLine`,
-  `SessionMeta`.
+- Module entry: `codex-rs/rollout/src/lib.rs:21` — `SESSIONS_SUBDIR`
+  constant; re-exports of `RolloutConfig`, `RolloutRecorder`,
+  `EventPersistenceMode` follow at `:34`–`:58`.
+- Async writer: `rollout/src/recorder.rs:82` (`RolloutRecorder`),
+  `:106` (`RolloutCmd { AddItems, Persist, Flush, Shutdown }`),
+  `:121` (`RolloutWriterTask`).
+- Header / metadata: `rollout/src/metadata.rs` — `builder_from_items`,
+  `extract_metadata_from_rollout`. The actual `SessionMeta` /
+  `SessionMetaLine` types are defined in
+  `codex-rs/protocol/src/protocol.rs` and re-exported from `rollout`.
 - Index over sessions: `rollout/src/session_index.rs` — sort keys
   (`CreatedAt`, `UpdatedAt`), directions, thread-name → id mapping.
-- State DB: `rollout/src/state_db.rs` — `StateDbHandle` (SQLite-backed).
+- State DB: `rollout/src/state_db.rs` — `StateDbHandle` is a re-export
+  of `codex_state::StateRuntime` (`:26`); `init` at `:42`.
 - Trace overlay: `rollout-trace/src/lib.rs`,
-  `rollout-trace/src/compaction.rs:30` — `CompactionTraceContext`.
-- Thread types: `codex-rs/thread-store/src/types.rs:30` —
-  `ThreadEventPersistenceMode`, `CreateThreadParams`, etc.
+  `rollout-trace/src/compaction.rs` — `CompactionTraceContext`.
+- Thread types: `codex-rs/thread-store/src/types.rs` —
+  `CreateThreadParams`, `ResumeThreadParams`, etc.
 - Item type: `codex-rs/protocol/src/protocol.rs` — `RolloutItem`.
 
 ## File layout
 
-- Active rollouts: `~/.codex/sessions/rollout-YYYY-MM-DDTHH-MM-SS-<uuid>.jsonl`.
+- Active rollouts: `~/.codex/sessions/YYYY/MM/DD/rollout-YYYY-MM-DDTHH-MM-SS-<uuid>.jsonl`
+  (filename built at `recorder.rs:1378`–`:1397`; subdir constants
+  `SESSIONS_SUBDIR` / `ARCHIVED_SESSIONS_SUBDIR` at
+  `rollout/src/lib.rs:21`–`:22`).
 - Archived rollouts: `~/.codex/archived_sessions/`.
-- State DB: `~/.codex/sessions.sqlite` (or similar — see
-  `state_db.rs`).
+- State DB: `~/.codex/state_5.sqlite` (filename constant
+  `STATE_DB_FILENAME` at `state/src/lib.rs:64`; resolved by
+  `state_db_path` at `state/src/runtime.rs:179`).
 
 Each rollout file is JSON-Lines. Line one is the metadata header
 (`SessionMetaLine`); each subsequent line is one `RolloutItem`.
@@ -83,7 +92,7 @@ surface the error rather than silently dropping.
 
 ## Event persistence modes
 
-`EventPersistenceMode` (`recorder.rs:196`):
+`EventPersistenceMode` (`rollout/src/policy.rs:6`):
 
 - `Limited` — legacy minimal replay surface. Smaller files, narrower
   replay capability.
@@ -96,28 +105,33 @@ the rollout retains).
 
 ## Thread / fork model
 
-`thread-store/src/types.rs:30` defines the API:
+`thread-store/src/types.rs` defines the API:
 
-- `CreateThreadParams` — initial cwd, model provider, memory mode.
-- `ResumeThreadParams { thread_id }` — pick up an existing rollout.
-- `ForkParams { forked_from_id, fork_point }` — branch from a known
-  point.
-- `AppendThreadItemsParams` — the per-turn append.
-- `LoadThreadHistoryParams` — load items for resume / rollback /
-  memory jobs.
+- `CreateThreadParams` (`:45`) — initial cwd, source, persistence mode,
+  optional `forked_from_id` (so creation also covers forks).
+- `ResumeThreadParams` (`:66`) — pick up an existing rollout.
+- `AppendThreadItemsParams` (`:83`) — the per-turn append.
+- `LoadThreadHistoryParams` (`:92`) — load items for resume /
+  rollback / memory jobs.
+- `ReadThreadParams` (`:110`), `ListThreadsParams` (`:152`),
+  `ListTurnsParams` (`:222`), `ListItemsParams` (`:271`) — read APIs.
 
 A *thread* is the user-facing handle around a rollout. Forks share a
-prefix and diverge at the fork point.
+prefix and diverge at the fork point; the public API exposes them via
+`forked_from_id` on `CreateThreadParams` rather than a dedicated
+`ForkParams` type. The cross-process fork wire type is
+`ThreadForkParams` in `app-server-protocol`.
 
 ## State DB
 
-`StateDbHandle` (SQLite) holds:
+`StateDbHandle` (an alias for `codex_state::StateRuntime`, see
+`rollout/src/state_db.rs:26`) is a SQLite-backed handle holding:
 
 - Per-session summaries (id, created_at, updated_at, model, etc.).
-- Thread-name → id mapping for friendly listing.
+- Thread-name → id mapping for friendly listing
+  (`rollout/src/session_index.rs`).
 - Memory job leasing (claim/release, see
   [context management](context-management.md)).
-- Plugin / marketplace bookkeeping it shares with `core-plugins`.
 
 It exists because file-walking the rollout directory at scale is too
 slow for listing UIs and for the memory consolidation worker.
@@ -126,10 +140,11 @@ slow for listing UIs and for the memory consolidation worker.
 
 `rollout-trace` (`rollout-trace/src/lib.rs`) is a separate overlay
 file describing higher-level transformations of a rollout — primarily
-**compaction checkpoints** (`rollout-trace/src/compaction.rs:30`,
-`CompactionTraceContext`). The trace lets debugging tools reconstruct
-which `input_history` was replaced by which `replacement_history`,
-and replay backwards to study compaction quality.
+**compaction checkpoints** (`rollout-trace/src/compaction.rs:35`,
+`CompactionTraceContext`; `:84` `CompactionCheckpointTracePayload`).
+The trace lets debugging tools reconstruct which `input_history` was
+replaced by which `replacement_history`, and replay backwards to
+study compaction quality.
 
 ## Edge cases & invariants
 

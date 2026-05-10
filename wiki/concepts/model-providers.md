@@ -47,7 +47,7 @@ live in `codex-client`.
 - Local providers: `codex-rs/lmstudio/src/lib.rs`,
   `codex-rs/ollama/src/lib.rs`.
 - HTTP client + retry + telemetry: `codex-rs/codex-client/src/`,
-  with SSE parsing at `codex-client/src/sse.rs:9`.
+  with SSE parsing at `codex-client/src/sse.rs:12`.
 
 ## ProviderCapabilities
 
@@ -74,7 +74,7 @@ rest of the stack (tool dispatch, sandboxing, hooks) is unchanged.
 ## Streaming
 
 Cloud providers stream responses via Server-Sent Events.
-`codex-client/src/sse.rs:9` (`sse_stream`) is the canonical SSE
+`codex-client/src/sse.rs:12` (`sse_stream`) is the canonical SSE
 parser, with idle-timeout and error handling. Streamed deltas become
 `ResponseItemDelta` events that the TUI renders incrementally; final
 items go through `record_conversation_items` (see
@@ -109,4 +109,5 @@ which model, handles fallbacks, and resolves the user's selection
   pipeline.
 - [Tools](tools.md) — tool spec serialization is provider-aware
   (Responses API vs others).
-- [Login](#) (TODO) — how device-code login feeds the auth providers.
+- The `login` crate (`codex-rs/login/`) — device-code / PKCE auth
+  flows feeding the auth providers (no dedicated wiki page yet).

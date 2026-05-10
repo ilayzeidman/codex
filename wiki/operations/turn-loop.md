@@ -108,7 +108,7 @@ User → CodexThread::submit ──┐
 5. **Provider call + streaming**: provider chosen via
    `models-manager`; HTTP request issued via
    `codex-rs/codex-client/src/transport.rs`; SSE parsed via
-   `codex-client/src/sse.rs:9`. See [streaming](../concepts/streaming.md).
+   `codex-client/src/sse.rs:12`. See [streaming](../concepts/streaming.md).
 
 6. **Output item handling**: `codex-rs/core/src/stream_events_utils.rs`
    normalizes streamed deltas. Tool calls hand off to the
@@ -129,6 +129,14 @@ User → CodexThread::submit ──┐
   see the request payload they're given.
 - A `Stop` outcome from any hook short-circuits the turn before
   persistence.
+
+## Open questions / gaps
+
+- Exact loop entry / runtime task names in
+  `core/src/codex_thread.rs` (this page summarizes from `submit`
+  outward; the per-thread task pump still wants a careful read).
+- Mid-turn cancellation semantics and how `CancellationToken` is
+  threaded through `dispatch_tool_call_with_code_mode_result`.
 
 ## See also
 

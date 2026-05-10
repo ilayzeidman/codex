@@ -62,8 +62,8 @@ engine consulted before either kicks in.
 | `None` | any | command runs unwrapped (only for explicit opt-out). |
 
 `SandboxablePreference` (`manager.rs:42`) is the user's preference
-stack: `Forbid`, `Prefer`, `Always`. `SandboxManager` reconciles
-preference with what the platform actually supports.
+stack: `Auto`, `Require`, `Forbid`. `SandboxManager` reconciles
+preference with what the platform actually supports (`manager.rs:148`).
 
 ## Approval flow
 
@@ -91,11 +91,11 @@ deployments — the `sandboxing.rs` gateway routes to it when configured.
 `execpolicy` is the rule engine consulted to classify shell commands
 before they reach the sandbox.
 
-- `Rule` (`rule.rs`) — pattern + action + scope.
-- `Policy` (`policy.rs`) — bundled rules with provenance.
-- `Decision` (`decision.rs`) — outcome (Allow / Deny / Prompt).
-- `ExecPolicyCheck` (`execpolicycheck.rs`) — entry point for evaluating
-  a candidate command.
+- `Rule` trait (`rule.rs:214`) implemented by concrete rule kinds
+  (`PrefixRule` at `:111`, `NetworkRule` at `:149`).
+- `Policy` (`policy.rs:28`) — bundled rules with provenance.
+- `Decision` (`decision.rs:9`) — outcome (Allow / Deny / Prompt).
+- `execpolicycheck.rs` — entry point for evaluating a candidate command.
 
 Rules cover binary path patterns, network operations, and
 context-specific overrides (e.g. allow `git status` but prompt on
@@ -108,7 +108,7 @@ A *permission profile* names a coherent bundle of capabilities (e.g.
 profile is what the user toggles via the TUI's permissions menu and
 what `policy_transforms.rs` reads to construct
 `SandboxExecRequest`s. The active profile is part of the
-`SessionConfiguration` (`core/src/session/session.rs:64`).
+`SessionConfiguration` (`core/src/session/session.rs:40`).
 
 ## Edge cases & invariants
 

@@ -50,11 +50,13 @@ and for batching multiple actions into a single round-trip.
   pub const PUBLIC_TOOL_NAME: &str = "exec";
   pub const WAIT_TOOL_NAME:   &str = "wait";
   ```
-- Tool handlers in core: `codex-rs/core/src/tools/handlers/mod.rs:46`
-  (`CodeModeExecuteHandler`, `CodeModeWaitHandler`) and
-  `codex-rs/core/src/tools/code_mode/` (registry integration).
-- Router augmentation: `core/src/tools/router.rs:513` enriches normal
-  tool specs with code-mode descriptions when code mode is enabled.
+- Tool handlers in core: `codex-rs/core/src/tools/handlers/mod.rs:47`–`:48`
+  re-export `CodeModeExecuteHandler` and `CodeModeWaitHandler` from
+  `codex-rs/core/src/tools/code_mode/{execute_handler.rs:16,wait_handler.rs:18}`.
+- Spec augmentation: `core/src/tools/spec_plan.rs:76`–`:111` enriches
+  normal tool specs with code-mode descriptions when
+  `config.code_mode_enabled` is set; the router's `is_code_mode_nested_tool`
+  filter gates dispatch (`router.rs:81`–`:82`).
 
 ## Concept
 
@@ -102,7 +104,8 @@ version so the model has the nested-tool API documented in-place.
 ## Edge cases & invariants
 
 - Code mode is opt-in; routing falls back to standard function calls
-  when not enabled (`router.rs:513`).
+  when not enabled (`config.code_mode_enabled` gate at
+  `spec_plan.rs:76`).
 - `parse_exec_source` is permissive — invalid scripts surface as
   errors back to the model rather than exceptions in the runtime.
 - The yield budgets are advisory: they bound how long an `exec`/`wait`

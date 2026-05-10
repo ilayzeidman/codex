@@ -103,6 +103,15 @@ events for each invocation and is expected to respond with a result.
   on any wire change (and PRs that change schemas are blocked at CI
   otherwise).
 
+## Open questions / gaps
+
+- Exact set of v2 RPC methods (the protocol module hasn't been read
+  end-to-end for this page).
+- WebSocket vs stdio framing details and reconnection / resume
+  semantics.
+- How `app-server-daemon` multiplexes per-client state and which
+  daemon-only RPCs exist.
+
 ## See also
 
 - [Tools](tools.md) — dynamic tool registration.

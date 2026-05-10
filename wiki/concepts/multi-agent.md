@@ -4,8 +4,6 @@ kind: concept
 status: draft
 sources:
   - codex-rs/agent-identity/src/lib.rs
-  - codex-rs/agent-identity/src/types.rs
-  - codex-rs/agent-identity/src/store.rs
   - codex-rs/agent-graph-store/src/lib.rs
   - codex-rs/external-agent-sessions/src/lib.rs
   - codex-rs/external-agent-sessions/src/detect.rs
@@ -38,15 +36,21 @@ agent creates and synchronizes children.
 
 ## Where it lives in the code
 
-- Identity types: `codex-rs/agent-identity/src/types.rs` —
-  `AgentIdentityKey`, `AgentIdentityJwtClaims`.
-- Identity store: `codex-rs/agent-identity/src/store.rs`,
-  `local.rs`.
-- Graph store: `codex-rs/agent-graph-store/src/lib.rs` —
-  `AgentGraphStore`, `ThreadSpawnEdgeStatus`.
+- Identity types: `codex-rs/agent-identity/src/lib.rs:40`
+  (`AgentIdentityKey`), `:66` (`AgentIdentityJwtClaims`),
+  `:53` (`AgentBillOfMaterials`), `:59` (`GeneratedAgentKeyMaterial`).
+- Identity helpers: same file —
+  `authorization_header_for_agent_task` (`:106`),
+  `fetch_agent_identity_jwks` (`:128`),
+  `decode_agent_identity_jwt` (`:147`),
+  `register_agent_task` (`:196`),
+  `decrypt_task_id_response` (`:248`).
+- Graph store: `codex-rs/agent-graph-store/src/lib.rs:11`
+  (`AgentGraphStore`), `:12` (`ThreadSpawnEdgeStatus`).
 - External agent migration:
-  `codex-rs/external-agent-sessions/src/lib.rs:21` —
-  `ExternalAgentSessionMigration`, `ImportedExternalAgentSession`.
+  `codex-rs/external-agent-sessions/src/lib.rs:24`
+  (`ExternalAgentSessionMigration`), `:31`
+  (`ImportedExternalAgentSession`).
 - Detection / ledger / export:
   `external-agent-sessions/src/detect.rs`, `ledger.rs`, `export.rs`.
 - Tool handlers: `codex-rs/core/src/tools/handlers/multi_agents.rs` —

@@ -32,8 +32,9 @@ registries.
 
 ## Where it lives in the code
 
-- Identity & summary types: `codex-rs/plugin/src/lib.rs:19` — `PluginId`,
-  `PluginCapabilitySummary`, `PluginHookSource`.
+- Identity & summary types: `codex-rs/plugin/src/lib.rs:15` re-exports
+  `PluginId`; `AppConnectorId` at `:20`,
+  `PluginCapabilitySummary` at `:23`, `PluginHookSource` at `:33`.
 - Manager: `codex-rs/core-plugins/src/manager.rs` — `PluginsManager`,
   `LoadedPlugin`.
 - Loader: `core-plugins/src/loader.rs`.
@@ -60,10 +61,10 @@ A single plugin manifest can declare any subset of:
 - **MCP servers** — manifest entries that produce
   `EffectiveMcpServer::Configured` records consumed by
   `McpConnectionManager`. See [MCP](mcp.md).
-- **App connectors** — referenced via `AppConnectorId` (in
-  `plugin/src/lib.rs:20`); see [connectors](connectors.md).
+- **App connectors** — referenced via `AppConnectorId`
+  (`plugin/src/lib.rs:20`); see [connectors](connectors.md).
 
-`PluginCapabilitySummary` (in `plugin/src/lib.rs`) is the compact
+`PluginCapabilitySummary` (`plugin/src/lib.rs:23`) is the compact
 listing the harness uses to render the "available plugins" block in
 the system prompt and the TUI plugin manager.
 

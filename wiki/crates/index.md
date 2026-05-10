@@ -150,6 +150,13 @@ land in the relevant types and call sites with citations.
 | `uds` | UDS helpers. |
 | `vendor` | Vendored dependencies. |
 | `v8-poc` | V8 integration proof-of-concept (related to code-mode runtime). |
+| `backend-client` | Codex backend HTTP client. |
+| `codex-backend-openapi-models` | OpenAPI-generated Codex backend types. |
+| `codex-experimental-api-macros` | Macros gating experimental app-server fields. |
+| `collaboration-mode-templates` | Templates for collaboration-mode prompts. |
+| `exec-server` | Companion server binary for `exec`. |
+| `test-binary-support` | Test scaffolding for spawning workspace binaries. |
+| `utils` | Shared utility crates collection (`codex-utils-*`). |
 
 ## See also
 

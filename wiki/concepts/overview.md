@@ -8,7 +8,7 @@ sources:
   - codex-rs/core/src/session/mod.rs
   - codex-rs/cli/src/main.rs
 related:
-  - concepts/turn-loop.md
+  - operations/turn-loop.md
   - concepts/skills.md
   - concepts/tools.md
   - concepts/mcp.md

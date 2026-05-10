@@ -42,17 +42,22 @@ built-in `memories` server) and exposes a unified `list_all_tools` /
 - Client crate: `codex-rs/codex-mcp/` (top-level `lib.rs:1`).
 - Connection manager: `codex-rs/codex-mcp/src/connection_manager.rs:72` —
   `McpConnectionManager`, `list_all_tools` (`:368`), `call_tool` (`:567`).
-- Tool name mapping: `codex-rs/codex-mcp/src/tools.rs:28` — `ToolInfo`,
-  normalization (`:138`).
-- Approval policy: `codex-rs/codex-mcp/src/mcp/mod.rs:43` (constants),
-  `:69` (auto-approve rules), elicitation in `elicitation.rs:1`.
+- Tool name mapping: `codex-rs/codex-mcp/src/tools.rs:29` — `ToolInfo`,
+  normalization (`:138`, `normalize_tools_for_model`).
+- Approval policy: `codex-rs/codex-mcp/src/mcp/mod.rs:44`–`:45`
+  (`MCP_TOOL_NAME_PREFIX` / `MCP_TOOL_NAME_DELIMITER` constants),
+  `:69` (`mcp_permission_prompt_is_auto_approved`), elicitation in
+  `elicitation.rs:1`.
 - Auth: `codex-rs/codex-mcp/src/mcp/auth.rs`, OAuth tokens via
   `codex-rs/rmcp-client/src/oauth.rs`.
-- RMCP transport: `codex-rs/rmcp-client/src/rmcp_client.rs:77`.
+- RMCP transport: `codex-rs/rmcp-client/src/rmcp_client.rs:275`
+  (`RmcpClient`); transports enumerated by `PendingTransport` at `:77`.
 - Built-in MCP servers: `codex-rs/builtin-mcps/src/lib.rs:1`.
-- Codex-as-MCP-server: `codex-rs/mcp-server/src/lib.rs:62`,
-  `message_processor.rs:250`, tool schemas in
-  `codex_tool_config.rs:21`.
+- Codex-as-MCP-server: `codex-rs/mcp-server/src/lib.rs:59`
+  (`run_main`), `message_processor.rs:250` (initialize capabilities),
+  `:324`–`:327` (tools list), tool schemas in
+  `codex_tool_config.rs:23` (`CodexToolCallParam`) and `:203`
+  (`CodexToolCallReplyParam`).
 - Config schema: `codex-rs/config/src/mcp_types.rs:118`
   (`McpServerConfig`), `:364` (`McpServerTransportConfig`).
 - Client-side bridge to the tool dispatch loop:
@@ -102,11 +107,11 @@ Public surface:
 - `call_tool(server, tool, args, meta)` (`:567`) — routes to the right
   client.
 - `list_all_resources` / `list_all_resource_templates` /
-  `read_resource` (`:430` onward) — paginated resource access.
+  `read_resource` (`:432` onward) — paginated resource access.
 - `parallel_tool_call_server_names` (`:133`) — feeds the parallel-tool
   config in [tools](tools.md).
-- `begin_shutdown` / `shutdown` (`:102`) — drain clients, terminate
-  stdio subprocesses cleanly.
+- `begin_shutdown` (`:104`) / `shutdown` (`:116`) — drain clients,
+  terminate stdio subprocesses cleanly.
 
 Startup is concurrent (`:200`): for each enabled server, an async task
 emits `McpStartupUpdateEvent(Starting)`, connects, initializes, lists
@@ -115,25 +120,27 @@ Default startup timeout is `rmcp_client::DEFAULT_STARTUP_TIMEOUT`.
 
 ### Transports
 
-`RmcpClient` (`rmcp-client/src/rmcp_client.rs:77`) covers three
-transports:
+`RmcpClient` (`rmcp-client/src/rmcp_client.rs:275`) connects via one
+of four `PendingTransport` variants (`:77`):
 
 | Variant | Use |
 |---|---|
 | `InProcess` | `tokio::io::DuplexStream` for built-in servers. |
 | `Stdio` | `StdioServerTransport` — spawns subprocess, JSON-RPC over pipes. |
-| `StreamableHttp` | `StreamableHttpClientTransport<…>` with optional `AuthClient` for OAuth. |
+| `StreamableHttp` | `StreamableHttpClientTransport<StreamableHttpClientAdapter>`. |
+| `StreamableHttpWithOAuth` | Same with `AuthClient<…>` plus `OAuthPersistor`. |
 
 The MCP `Initialize` handshake discovers capabilities; resources,
 prompts, and tools are listed afterward.
 
 ### Tool naming and namespacing
 
-Constants in `mcp/mod.rs:43`:
+Constants in `mcp/mod.rs:44`–`:45`:
 
-- Prefix: `"mcp"`
-- Delimiter: `"__"`
-- `qualified_mcp_tool_name_prefix(server_name)` returns `"mcp__<server>__"`.
+- `MCP_TOOL_NAME_PREFIX = "mcp"`
+- `MCP_TOOL_NAME_DELIMITER = "__"`
+- `qualified_mcp_tool_name_prefix(server_name)` (`:61`) returns
+  `"mcp__<server>__"`.
 
 The resulting model-visible tool names look like
 `mcp__github__list_repos`. `tools.rs:138` normalizes both server and
@@ -141,7 +148,7 @@ tool components to alphanumeric+underscore, ensures the result is ≤64
 bytes, and appends a hash suffix on collision so each tool has a unique
 callable name.
 
-`ToolInfo` (`tools.rs:28`) is the metadata bundle:
+`ToolInfo` (`tools.rs:29`) is the metadata bundle:
 
 - `server_name` — raw MCP server name (used for routing).
 - `callable_namespace`, `callable_name` — sanitized model-facing names.
@@ -218,19 +225,19 @@ spawn).
 The `mcp-server` crate exposes Codex itself as an MCP server, so Claude
 Desktop (or any MCP client) can drive a Codex session.
 
-Two tools (`mcp-server/src/message_processor.rs:325`):
+Two tools (`mcp-server/src/message_processor.rs:324`–`:327`):
 
 | Tool | Input | Behavior |
 |---|---|---|
-| `codex` | `CodexToolCallParam` (prompt, model, sandbox, config overrides; `codex_tool_config.rs:21`) | Creates a new Codex session and runs the model + tools to completion. |
+| `codex` | `CodexToolCallParam` (prompt, model, sandbox, config overrides; `codex_tool_config.rs:23`) | Creates a new Codex session and runs the model + tools to completion. |
 | `codex-reply` | `CodexToolCallReplyParam` (thread_id, prompt) | Continues an existing thread. |
 
 Capabilities (`message_processor.rs:250`) advertise `tools` only —
-resources, resource templates, and prompts return not-implemented or
-minimal stubs (`:308`). Transport is stdin/stdout JSON-RPC
-(`mcp-server/src/lib.rs:62`). Approval / elicitation requests for
-exec/patch within the wrapped session are routed back through a callback
-channel to the MCP client.
+resources, resource templates (`:288`–`:307`), and prompts (`:308`)
+log requests but return no items. Transport is stdin/stdout JSON-RPC
+(`mcp-server/src/lib.rs:59` `run_main`). Approval / elicitation
+requests for exec/patch within the wrapped session are routed back
+through a callback channel to the MCP client.
 
 ## Tool dispatch
 

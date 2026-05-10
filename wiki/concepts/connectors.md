@@ -28,10 +28,12 @@ the user installs them, so the link to model context goes through
 
 ## Where it lives in the code
 
-- Public API: `codex-rs/connectors/src/lib.rs:24` —
-  `ConnectorDirectoryCacheKey`, `DirectoryApp`,
-  `ConnectorDirectoryCacheContext`.
-- Cache: `connectors/src/directory_cache.rs` (TTL ~1 hour).
+- Public API: `codex-rs/connectors/src/lib.rs:20`
+  (`ConnectorDirectoryCacheContext`),
+  `:25` (`ConnectorDirectoryCacheKey`),
+  `:66` (`DirectoryApp`).
+- Cache: `connectors/src/directory_cache.rs`; TTL constant
+  `CONNECTORS_CACHE_TTL = 3600s` at `lib.rs:22`.
 - Filter / merge / metadata: `filter.rs`, `merge.rs`, `metadata.rs`.
 - Accessibility checks: `accessible.rs`.
 - Plugin link: `codex-rs/plugin/src/lib.rs:20` — `AppConnectorId` is

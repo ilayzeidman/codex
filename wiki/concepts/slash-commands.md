@@ -23,8 +23,8 @@ not an extension surface — extensible workflows belong in
 
 ## Where it lives in the code
 
-- Enum: `codex-rs/tui/src/slash_command.rs:8` — `SlashCommand`
-  variants, display metadata, keybinding annotations.
+- Enum: `codex-rs/tui/src/slash_command.rs:12` — `SlashCommand`
+  variants, display metadata at `:80` onward.
 - Composer popup: `codex-rs/tui/src/bottom_pane/slash_commands.rs`.
 - Dispatch: `codex-rs/tui/src/chatwidget/slash_dispatch.rs`.
 - User-facing docs: `docs/slash_commands.md`.
@@ -48,6 +48,12 @@ not an extension surface — extensible workflows belong in
   flow through the same context-update machinery as silent state
   changes — see [context management](context-management.md) on
   `<model_switch>` developer messages.
+
+## Open questions / gaps
+
+- The full enum of `SlashCommand` variants and their dispatch
+  handlers — this page hasn't read `slash_dispatch.rs` line by line.
+- How slash commands interact with snapshot tests in `tui/`.
 
 ## See also
 
