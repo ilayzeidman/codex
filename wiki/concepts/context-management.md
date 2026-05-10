@@ -93,8 +93,8 @@ context: `Message`, `Compaction`, `ContextCompaction`, `Reasoning`,
 
 `TurnContext` (`session/turn_context.rs:55`) carries the per-turn
 parameters: `sub_id`, `model_info` (with `context_window`),
-`developer_instructions`, `user_instructions`, `truncation_policy`,
-and other turn-scoped fields.
+`developer_instructions`, `user_instructions`, `compact_prompt`,
+`truncation_policy`, and `dynamic_tools`.
 
 `TotalTokenUsageBreakdown` (`context_manager/history.rs:54`) tracks:
 - `last_api_response_total_tokens`
