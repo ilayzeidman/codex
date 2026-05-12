@@ -184,6 +184,7 @@ impl MemoryStartupContext {
             config.features.enabled(Feature::RuntimeMetrics),
             /*beta_features_header*/ None,
             /*attestation_provider*/ None,
+            /*dumper*/ None, // memory-write runtime: not yet plumbed; see TODO.
         );
 
         let mut client_session = model_client.new_session();

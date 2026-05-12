@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
+use std::path::PathBuf;
 
 use crate::HooksToml;
 use crate::permissions_toml::PermissionsToml;
@@ -295,6 +296,10 @@ pub struct ConfigToml {
     pub model_reasoning_summary: Option<ReasoningSummary>,
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
     pub model_verbosity: Option<Verbosity>,
+
+    /// Directory where outbound LLM HTTP requests/responses are dumped for debugging
+    /// (set via `--debug-llm-dump <DIR>` or the `CODEX_DEBUG_LLM_DUMP` env var).
+    pub debug_llm_dump_dir: Option<PathBuf>,
 
     /// Override to force-enable reasoning summaries for the configured model.
     pub model_supports_reasoning_summaries: Option<bool>,

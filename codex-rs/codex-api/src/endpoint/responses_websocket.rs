@@ -9,6 +9,7 @@ use crate::rate_limits::parse_rate_limit_event;
 use crate::sse::ResponsesStreamEvent;
 use crate::sse::process_responses_event;
 use crate::telemetry::WebsocketTelemetry;
+use codex_client::SessionDumper;
 use codex_client::TransportError;
 use codex_client::maybe_build_rustls_client_config_with_custom_ca;
 use codex_utils_rustls_provider::ensure_rustls_crypto_provider;
@@ -61,10 +62,14 @@ enum WsCommand {
 }
 
 impl WsStream {
-    fn new(inner: WebSocketStream<MaybeTlsStream<TcpStream>>) -> Self {
+    fn new(
+        inner: WebSocketStream<MaybeTlsStream<TcpStream>>,
+        dumper: Option<SessionDumper>,
+    ) -> Self {
         let (tx_command, mut rx_command) = mpsc::channel::<WsCommand>(32);
         let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, WsError>>();
 
+        let pump_dumper = dumper;
         let pump_task = tokio::spawn(async move {
             let mut inner = inner;
             loop {
@@ -75,6 +80,9 @@ impl WsStream {
                         };
                         match command {
                             WsCommand::Send { message, tx_result } => {
+                                if let Some(d) = pump_dumper.as_ref() {
+                                    dump_ws_frame(d, "sent", &message);
+                                }
                                 let result = inner.send(message).await;
                                 let should_break = result.is_err();
                                 let _ = tx_result.send(result);
@@ -100,6 +108,9 @@ impl WsStream {
                             | Message::Binary(_)
                             | Message::Close(_)
                             | Message::Frame(_))) => {
+                                if let Some(d) = pump_dumper.as_ref() {
+                                    dump_ws_frame(d, "received", &message);
+                                }
                                 let is_close = matches!(message, Message::Close(_));
                                 if tx_message.send(Ok(message)).is_err() {
                                     break;
@@ -149,6 +160,22 @@ impl WsStream {
 impl Drop for WsStream {
     fn drop(&mut self) {
         self.pump_task.abort();
+    }
+}
+
+/// Write one frame (sent or received) to the session dumper's ws-events.ndjson.
+/// Skips non-application frames (Ping/Pong/Frame); records Close with no body.
+fn dump_ws_frame(dumper: &SessionDumper, direction: &str, message: &Message) {
+    match message {
+        Message::Text(text) => dumper.dump_ws_event(direction, text),
+        Message::Binary(bytes) => {
+            // Binary frames are unusual for the Responses WS protocol but if they
+            // ever appear we capture them as a UTF-8-lossy string so the user
+            // sees at least the shape.
+            dumper.dump_ws_event(direction, &String::from_utf8_lossy(bytes));
+        }
+        Message::Close(_) => dumper.dump_ws_event(direction, "<close>"),
+        _ => {}
     }
 }
 
@@ -343,6 +370,7 @@ impl ResponsesWebsocketClient {
         default_headers: HeaderMap,
         turn_state: Option<Arc<OnceLock<String>>>,
         telemetry: Option<Arc<dyn WebsocketTelemetry>>,
+        dumper: Option<SessionDumper>,
     ) -> Result<ResponsesWebsocketConnection, ApiError> {
         let ws_url = self
             .provider
@@ -354,7 +382,7 @@ impl ResponsesWebsocketClient {
         self.auth.add_auth_headers(&mut headers);
 
         let (stream, server_reasoning_included, models_etag, server_model) =
-            connect_websocket(ws_url, headers, turn_state.clone()).await?;
+            connect_websocket(ws_url, headers, turn_state.clone(), dumper).await?;
         Ok(ResponsesWebsocketConnection::new(
             stream,
             self.provider.stream_idle_timeout,
@@ -385,6 +413,7 @@ async fn connect_websocket(
     url: Url,
     headers: HeaderMap,
     turn_state: Option<Arc<OnceLock<String>>>,
+    dumper: Option<SessionDumper>,
 ) -> Result<(WsStream, bool, Option<String>, Option<String>), ApiError> {
     ensure_rustls_crypto_provider();
     info!("connecting to websocket: {url}");
@@ -443,8 +472,11 @@ async fn connect_websocket(
     {
         let _ = turn_state.set(header_value.to_string());
     }
+    if let Some(d) = dumper.as_ref() {
+        d.dump_ws_event("connect", &format!("{{\"url\":\"{url}\"}}"));
+    }
     Ok((
-        WsStream::new(stream),
+        WsStream::new(stream, dumper),
         reasoning_included,
         models_etag,
         server_model,

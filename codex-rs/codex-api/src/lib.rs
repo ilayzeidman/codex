@@ -11,9 +11,15 @@ pub(crate) mod sse;
 pub(crate) mod telemetry;
 
 pub use crate::requests::headers::build_session_headers;
+pub use codex_client::AnyTransport;
+pub use codex_client::DumpConfig;
+pub use codex_client::DumpManifest;
+pub use codex_client::DumpingTransport;
 pub use codex_client::RequestTelemetry;
 pub use codex_client::ReqwestTransport;
+pub use codex_client::SessionDumper;
 pub use codex_client::TransportError;
+pub use codex_client::iso_timestamp_now_unix_ms;
 
 pub use crate::api_bridge::map_api_error;
 pub use crate::auth::AuthError;

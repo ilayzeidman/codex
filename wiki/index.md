@@ -57,6 +57,7 @@ operating procedure.
 | [Turn loop](operations/turn-loop.md) | End-to-end per-turn flow. |
 | [Tool call lifecycle](operations/tool-call-lifecycle.md) | End-to-end per-tool-call flow. |
 | [Session lifecycle](operations/session-lifecycle.md) | Create / resume / fork / shutdown. |
+| [Debug LLM dump](operations/debug-llm-dump.md) | Record every outbound LLM call (HTTP + WS) to disk per session. |
 
 ## Crates
 

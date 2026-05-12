@@ -810,6 +810,40 @@ impl Session {
                 SessionId::from(thread_id)
             };
             let agent_control = agent_control.with_session_id(session_id);
+            // Build the optional LLM-traffic dumper for this session. When
+            // `--debug-llm-dump` / `CODEX_DEBUG_LLM_DUMP` / config `debug_llm_dump_dir`
+            // is set, every outbound HTTP request and response is written to
+            // `<root>/<thread-uuid>/` so it lines up 1:1 with the rollout file.
+            let llm_dumper = config.debug_llm_dump_dir.as_ref().map(|root| {
+                let (started_at_unix_ms, started_at_iso) =
+                    codex_api::iso_timestamp_now_unix_ms();
+                let manifest = codex_api::DumpManifest {
+                    codex_version: env!("CARGO_PKG_VERSION").to_string(),
+                    session_id: session_id.to_string(),
+                    thread_id: thread_id.to_string(),
+                    session_source: format!("{:?}", session_configuration.session_source),
+                    started_at_unix_ms,
+                    started_at_iso,
+                    model_provider_id: config.model_provider_id.clone(),
+                    model: Some(
+                        session_configuration
+                            .collaboration_mode
+                            .model()
+                            .to_string(),
+                    ),
+                    redacted_headers: vec![
+                        "authorization".to_string(),
+                        "*cookie*".to_string(),
+                        "x-api-key".to_string(),
+                    ],
+                };
+                let dump_cfg = codex_api::DumpConfig::new(root.clone());
+                codex_api::SessionDumper::for_session(
+                    &dump_cfg,
+                    &thread_id.to_string(),
+                    manifest,
+                )
+            });
             let services = SessionServices {
                 // Initialize the MCP connection manager with an uninitialized
                 // instance. It will be replaced with one created via
@@ -864,6 +898,7 @@ impl Session {
                     config.features.enabled(Feature::RuntimeMetrics),
                     Self::build_model_client_beta_features_header(config.as_ref()),
                     attestation_provider,
+                    llm_dumper,
                 ),
                 code_mode_service: crate::tools::code_mode::CodeModeService::new(),
                 environment_manager,

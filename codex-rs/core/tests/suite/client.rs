@@ -908,6 +908,7 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
         /*attestation_provider*/ None,
+        /*dumper*/ None,
     );
     let mut client_session = client.new_session();
     let mut prompt = Prompt::default();
@@ -2330,6 +2331,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
         /*attestation_provider*/ None,
+        /*dumper*/ None,
     );
     let mut client_session = client.new_session();
 

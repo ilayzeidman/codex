@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* react-json-view-lite dark tweaks */
+.json-view {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.json-view ul,
+.json-view ol {
+  list-style: none;
+  padding-left: 1.25rem;
+  margin: 0;
+}
+.json-view-container > * {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.json-view-row {
+  padding: 1px 0;
+}
+.json-view-string {
+  color: #fcd34d; /* amber-300, readable on ink-900 */
+}
+.json-view-number {
+  color: #93c5fd; /* blue-300 */
+}
+.json-view-boolean {
+  color: #f472b6; /* pink-400 */
+}
+.json-view-null,
+.json-view-undefined {
+  color: #7a8597; /* ink-400 */
+  font-style: italic;
+}
+.json-view-label {
+  color: #d3d8e0; /* ink-200 */
+}
+.json-view-punctuation {
+  color: #566173; /* ink-500 */
+}
+.json-view-collapse,
+.json-view-expand {
+  color: #a8b1bf;
+  cursor: pointer;
+}
+
+/* Hide native scrollbar gutter for slim look */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #11151c;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a313c;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3d4654;
+}
+
+/* small dot pulse used on stream activity */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse-dot {
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+
+.code-block {
+  @apply font-mono text-xs whitespace-pre-wrap break-words bg-ink-900 border border-ink-700 rounded-md p-3 text-ink-200;
+}

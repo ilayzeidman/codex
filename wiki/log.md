@@ -230,3 +230,69 @@ following the lint instructions in `WIKI.md`.
 - Multiple crate pages under `crates/` are stubs (no per-crate
   pages exist beyond `index.md`); the schema allows them but they
   haven't been written yet.
+
+---
+
+## [2026-05-12] ingest | debug LLM dump feature
+
+A new feature was added to `codex-rs/`: `--debug-llm-dump <DIR>` (with
+`CODEX_DEBUG_LLM_DUMP` env var and `debug_llm_dump_dir` config key).
+When enabled, every outbound LLM API call is recorded to disk per
+session, keyed by `thread_id` so the dump folder matches the rollout
+file under `~/.codex/sessions/.../rollout-...-<thread-uuid>.jsonl`.
+
+**Implementation surface ingested:**
+
+- `codex-rs/codex-client/src/dump.rs` (new module): `DumpConfig`,
+  `Manifest`, `SessionDumper`, `DumpingTransport<T>`, `AnyTransport`,
+  `DumpStream` (the async SSE-stream tee), and `dump_ws_event` for
+  WebSocket frames.
+- `codex-rs/codex-api/src/endpoint/responses_websocket.rs`: `WsStream`
+  pump task instrumented with `dump_ws_frame` on both `sent` and
+  `received` branches; `connect_websocket` emits a `connect` event
+  with the WS URL.
+- `codex-rs/core/src/client.rs`: `ModelClientState` gained a
+  `dumper: Option<SessionDumper>` field, `ModelClient::new` a `dumper`
+  parameter, and `make_transport()` helper returns an `AnyTransport`
+  that wraps `ReqwestTransport` with a `DumpingTransport` when active.
+  Replaces all five production transport-construction sites (compact,
+  Realtime SDP, memories summarize, Responses SSE retry loop, and the
+  WS connect site at line 847 which forwards the dumper).
+- `codex-rs/core/src/session/session.rs:817-844`: builds the
+  `SessionDumper` and `Manifest` at session init from
+  `config.debug_llm_dump_dir`.
+- `codex-rs/cli/src/main.rs`: `DebugDumpOptions` struct flattened into
+  `MultitoolCli`, folded into `root_config_overrides.raw_overrides`.
+- `codex-rs/config/src/config_toml.rs` and
+  `codex-rs/core/src/config/mod.rs`: added `debug_llm_dump_dir:
+  Option<PathBuf>` to `ConfigToml` and `Config`.
+
+**Created:**
+
+- `wiki/operations/debug-llm-dump.md` — full operational page covering
+  the dump's where-it-lives, data types, file layout, WS event schema,
+  HTTP file schema, configuration, redaction policy, how to read a
+  dump, session boundaries, operational characteristics, and known
+  gaps (memories-write subagent and models-endpoint catalog fetch are
+  not yet captured).
+
+**Updated:**
+
+- `wiki/index.md` — added the new page to the Operations table.
+- `wiki/concepts/streaming.md` — added the new page to `related:` so
+  readers learning about streaming find the dump as the practical
+  inspection tool.
+
+**Open questions / gaps:**
+
+- The memories-write subagent at `codex-rs/memories/write/src/runtime.rs:175`
+  constructs its own `ModelClient` with `dumper: None`. Its
+  trace-summarize LLM calls are therefore not captured.
+- The model-provider catalog fetch at
+  `codex-rs/model-provider/src/models_endpoint.rs:91` runs before any
+  session exists; not yet wrapped with `SessionDumper::no_session`.
+- `cargo test -p codex-client dump` was not run end-to-end because the
+  workspace dev-dep `aws-lc-sys` requires MSVC `INCLUDE`/`LIB` env
+  vars (sourced via `vcvars64.bat` or a Developer PowerShell) and
+  NASM, neither of which were available in the build environment
+  used.

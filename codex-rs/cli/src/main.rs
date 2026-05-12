@@ -93,6 +93,9 @@ struct MultitoolCli {
     pub feature_toggles: FeatureToggles,
 
     #[clap(flatten)]
+    pub debug_dump: DebugDumpOptions,
+
+    #[clap(flatten)]
     remote: InteractiveRemoteOptions,
 
     #[clap(flatten)]
@@ -717,6 +720,39 @@ struct FeatureToggles {
 }
 
 #[derive(Debug, Default, Parser, Clone)]
+struct DebugDumpOptions {
+    /// Dump every outbound LLM API request and response to `<DIR>/<thread-uuid>/`.
+    /// Sensitive headers (authorization, *cookie*, x-api-key) are redacted.
+    /// Each call writes three files: `*-request.json`, `*-stream.ndjson`
+    /// (one JSON line per SSE chunk), and `*-response.json` (aggregated body).
+    /// The folder name matches the rollout file under ~/.codex/sessions/.../.
+    /// Note: this does not affect the internal `responses-api-proxy` subcommand,
+    /// which has its own `--dump-dir` flag.
+    #[arg(
+        long = "debug-llm-dump",
+        value_name = "DIR",
+        env = "CODEX_DEBUG_LLM_DUMP",
+        global = true,
+    )]
+    debug_llm_dump: Option<PathBuf>,
+}
+
+impl DebugDumpOptions {
+    fn to_overrides(&self) -> Vec<String> {
+        match &self.debug_llm_dump {
+            None => Vec::new(),
+            Some(dir) => {
+                // Use serde_json string-escaping to handle Windows backslashes,
+                // quotes, and other characters that would break TOML parsing.
+                let escaped = serde_json::to_string(&dir.display().to_string())
+                    .expect("path can be JSON-encoded");
+                vec![format!("debug_llm_dump_dir={escaped}")]
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default, Parser, Clone)]
 struct InteractiveRemoteOptions {
     /// Connect the TUI to a remote app server websocket endpoint.
     ///
@@ -804,6 +840,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let MultitoolCli {
         config_overrides: mut root_config_overrides,
         feature_toggles,
+        debug_dump,
         remote,
         mut interactive,
         subcommand,
@@ -812,6 +849,11 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
     root_config_overrides.raw_overrides.extend(toggle_overrides);
+    // Fold --debug-llm-dump (or CODEX_DEBUG_LLM_DUMP env var) into the config so
+    // the dump dir reaches every subcommand the same way.
+    root_config_overrides
+        .raw_overrides
+        .extend(debug_dump.to_overrides());
     let root_remote = remote.remote;
     let root_remote_auth_token_env = remote.remote_auth_token_env;
 

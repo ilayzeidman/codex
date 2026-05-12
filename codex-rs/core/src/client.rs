@@ -45,7 +45,10 @@ use codex_api::RealtimeCallClient as ApiRealtimeCallClient;
 use codex_api::RealtimeSessionConfig as ApiRealtimeSessionConfig;
 use codex_api::Reasoning;
 use codex_api::RequestTelemetry;
+use codex_api::AnyTransport;
+use codex_api::DumpingTransport;
 use codex_api::ReqwestTransport;
+use codex_api::SessionDumper;
 use codex_api::ResponseCreateWsRequest;
 use codex_api::ResponsesApiRequest;
 use codex_api::ResponsesClient as ApiResponsesClient;
@@ -177,6 +180,9 @@ struct ModelClientState {
     attestation_provider: Option<Arc<dyn AttestationProvider>>,
     disable_websockets: AtomicBool,
     cached_websocket_session: StdMutex<WebsocketSession>,
+    /// Optional per-session LLM-traffic dumper. When `Some`, every outbound HTTP
+    /// request and response is written to disk under the dumper's session folder.
+    dumper: Option<SessionDumper>,
 }
 
 /// Resolved API client setup for a single request attempt.
@@ -320,6 +326,7 @@ impl ModelClient {
         include_timing_metrics: bool,
         beta_features_header: Option<String>,
         attestation_provider: Option<Arc<dyn AttestationProvider>>,
+        dumper: Option<SessionDumper>,
     ) -> Self {
         let model_provider = create_model_provider(provider_info, auth_manager);
         let codex_api_key_env_enabled = model_provider
@@ -346,7 +353,18 @@ impl ModelClient {
                 attestation_provider,
                 disable_websockets: AtomicBool::new(false),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
+                dumper,
             }),
+        }
+    }
+
+    /// Build a transport for one outbound LLM call. Wraps the inner `ReqwestTransport`
+    /// in a `DumpingTransport` when `--debug-llm-dump` is active for this session.
+    fn make_transport(&self) -> AnyTransport {
+        let plain = ReqwestTransport::new(build_reqwest_client());
+        match self.state.dumper.as_ref() {
+            Some(d) => AnyTransport::Dumping(DumpingTransport::new(plain, d.clone())),
+            None => AnyTransport::Plain(plain),
         }
     }
 
@@ -441,7 +459,7 @@ impl ModelClient {
             return Ok(Vec::new());
         }
         let client_setup = self.current_client_setup().await?;
-        let transport = ReqwestTransport::new(build_reqwest_client());
+        let transport = self.make_transport();
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
@@ -529,7 +547,7 @@ impl ModelClient {
         sideband_headers.extend(sideband_websocket_auth_headers(
             client_setup.api_auth.as_ref(),
         ));
-        let transport = ReqwestTransport::new(build_reqwest_client());
+        let transport = self.make_transport();
         let response =
             ApiRealtimeCallClient::new(transport, client_setup.api_provider, client_setup.api_auth)
                 .create_with_session_and_headers(sdp, session_config, extra_headers)
@@ -560,7 +578,7 @@ impl ModelClient {
         }
 
         let client_setup = self.current_client_setup().await?;
-        let transport = ReqwestTransport::new(build_reqwest_client());
+        let transport = self.make_transport();
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
@@ -826,6 +844,7 @@ impl ModelClient {
                 codex_login::default_client::default_headers(),
                 turn_state,
                 Some(websocket_telemetry),
+                self.state.dumper.clone(),
             ),
         )
         .await
@@ -1241,7 +1260,7 @@ impl ModelClientSession {
         let mut pending_retry = PendingUnauthorizedRetry::default();
         loop {
             let client_setup = self.client.current_client_setup().await?;
-            let transport = ReqwestTransport::new(build_reqwest_client());
+            let transport = self.client.make_transport();
             let request_auth_context = AuthRequestTelemetryContext::new(
                 client_setup.auth.as_ref().map(CodexAuth::auth_mode),
                 client_setup.api_auth.as_ref(),

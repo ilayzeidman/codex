@@ -704,6 +704,13 @@ pub struct Config {
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
     pub model_verbosity: Option<Verbosity>,
 
+    /// Directory where outbound LLM HTTP requests/responses are dumped for debugging.
+    /// Set via `--debug-llm-dump <DIR>` (CLI), `CODEX_DEBUG_LLM_DUMP` (env), or
+    /// `debug_llm_dump_dir` in `config.toml`. Each session writes to a
+    /// `<thread-uuid>` subfolder matching its rollout file. Sensitive headers are
+    /// redacted by default.
+    pub debug_llm_dump_dir: Option<PathBuf>,
+
     /// Base URL for requests to ChatGPT (as opposed to the OpenAI API).
     pub chatgpt_base_url: String,
 
@@ -3090,6 +3097,7 @@ impl Config {
             model_supports_reasoning_summaries: cfg.model_supports_reasoning_summaries,
             model_catalog,
             model_verbosity: config_profile.model_verbosity.or(cfg.model_verbosity),
+            debug_llm_dump_dir: cfg.debug_llm_dump_dir.clone(),
             chatgpt_base_url: config_profile
                 .chatgpt_base_url
                 .or(cfg.chatgpt_base_url)
