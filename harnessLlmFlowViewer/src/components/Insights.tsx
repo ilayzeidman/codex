@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Session } from '../types';
+import { Session, isToolCall } from '../types';
 import { fmtDurationMs, fmtNumber } from '../lib/format';
 import { Stat } from './Stat';
 
@@ -23,8 +23,11 @@ export function Insights({ session }: Props) {
     const m = new Map<string, number>();
     for (const t of turns) {
       for (const o of t.outputs) {
-        if (o.kind === 'function_call') {
-          m.set(o.name, (m.get(o.name) ?? 0) + 1);
+        if (isToolCall(o)) {
+          // Distinguish custom tools so apply_patch doesn't blend with a JSON
+          // tool named "apply_patch" (if one ever existed).
+          const key = o.kind === 'custom_tool_call' ? `${o.name} (custom)` : o.name;
+          m.set(key, (m.get(key) ?? 0) + 1);
         }
       }
     }
@@ -64,6 +67,11 @@ export function Insights({ session }: Props) {
                   />
                   <span className="absolute inset-0 flex items-center px-2 font-mono text-ink-200">
                     {fmtDurationMs(t.durationMs)} · ttft {fmtDurationMs(t.ttftMs)}
+                    {t.ttfvbMs !== undefined && t.ttfvbMs !== t.ttftMs && (
+                      <span className="ml-2 text-ink-500">
+                        · ttfvb {fmtDurationMs(t.ttfvbMs)}
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="relative h-5 bg-ink-900 rounded border border-ink-700 overflow-hidden">

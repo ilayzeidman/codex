@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Session } from '../types';
+import { Session, isToolCall } from '../types';
 import { fmtDurationMs, fmtIso } from '../lib/format';
 import { Stat } from './Stat';
 import { Copyable } from './Copyable';
@@ -21,7 +21,7 @@ export function SessionHeader({ session, onReset }: Props) {
     let toolCalls = 0;
     let totalTokens = 0;
     for (const t of session.turns) {
-      for (const o of t.outputs) if (o.kind === 'function_call') toolCalls++;
+      for (const o of t.outputs) if (isToolCall(o)) toolCalls++;
       totalTokens += t.usage?.total_tokens ?? 0;
     }
     return { sent, received, toolCalls, totalTokens, total: session.wsEvents.length };

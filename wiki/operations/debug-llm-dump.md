@@ -313,27 +313,179 @@ The `manifest.json` `session_source` field disambiguates roots
   which needs both. Unit tests for the dumper are written but have
   not yet been run under that environment.
 
-## Verification
+## Cheat sheet — capture more dumps
 
-```powershell
-# From a fresh shell:
-$env:CODEX_DEBUG_LLM_DUMP = 'C:\tmp\codex-dump'
+The custom build with `--debug-llm-dump` is at:
 
-# Run two sessions back-to-back to demonstrate boundaries:
-cmd /c "C:\Development\research\codex\codex-rs\target\debug\codex.exe exec ""Say hi in exactly three words."" < NUL"
-cmd /c "C:\Development\research\codex\codex-rs\target\debug\codex.exe exec ""Write a haiku about Rust."" < NUL"
-
-# Inspect:
-Get-ChildItem -Recurse C:\tmp\codex-dump
-# Expected: two <thread-uuid> folders, each containing manifest.json + ws-events.ndjson
+```
+C:\Development\research\codex\codex-rs\target\debug\codex.exe
 ```
 
-For a one-line summary of the chronological event flow:
+(There is no `target\release\codex.exe` yet — `cargo build --release`
+inside `codex-rs\` if you want one. Debug works for capture, just larger
+binary and slower startup.)
+
+**Two gotchas before you start:**
+
+1. **Stdin must be closed.** `codex exec` reads stdin for piped input
+   and waits for EOF. From a non-piping shell that means it hangs.
+   - cmd / PowerShell: `cmd /c "codex.exe exec ""…"" < NUL"`
+   - bash (Git Bash, MSYS, WSL): `codex.exe exec "…" < /dev/null`
+2. **`exec --skip-git-repo-check` unless your CWD is in a git repo.**
+   Codex refuses to start outside a git repo with the message
+   `Not inside a trusted directory and --skip-git-repo-check was not specified.`
+   (see [`exec/src/lib.rs:666`](../../codex-rs/exec/src/lib.rs#L666)).
+   The flag belongs to the `exec` subcommand, so it goes **after**
+   `exec`, not before. Alternative: root flag `-C <git-repo-dir>`
+   before `exec`, pointing codex at a real git repo (the codex source
+   tree itself, `C:\Development\research\codex`, works).
+
+If you forget #1 codex looks stuck; if you forget #2 it exits with the
+trust-check error. Both flags appear in every example below.
+
+### PowerShell — one prompt
 
 ```powershell
-Get-Content "C:\tmp\codex-dump\<thread-uuid>\ws-events.ndjson" |
+$env:CODEX_DEBUG_LLM_DUMP = 'C:\tmp\codex-dump'
+$codex = 'C:\Development\research\codex\codex-rs\target\debug\codex.exe'
+cmd /c "$codex exec --skip-git-repo-check ""Say hi in three words."" < NUL"
+```
+
+### PowerShell — many prompts in a loop
+
+Each invocation is its own session (= its own `<thread-uuid>` folder
+under `$env:CODEX_DEBUG_LLM_DUMP`).
+
+```powershell
+$env:CODEX_DEBUG_LLM_DUMP = 'C:\tmp\codex-dump'
+$codex = 'C:\Development\research\codex\codex-rs\target\debug\codex.exe'
+
+$prompts = @(
+  'Say hi in three words.',
+  'Write a haiku about Rust.',
+  'Explain WebSocket streaming briefly.'
+)
+
+foreach ($p in $prompts) {
+  Write-Host "→ $p" -ForegroundColor Cyan
+  cmd /c "$codex exec --skip-git-repo-check ""$p"" < NUL"
+}
+
+Get-ChildItem $env:CODEX_DEBUG_LLM_DUMP -Directory |
+  Select-Object Name, LastWriteTime
+```
+
+### Bash (Git Bash on Windows) — one prompt
+
+```bash
+export CODEX_DEBUG_LLM_DUMP='C:/tmp/codex-dump'
+CODEX='/c/Development/research/codex/codex-rs/target/debug/codex.exe'
+"$CODEX" exec --skip-git-repo-check "Say hi in three words." < /dev/null
+```
+
+### Bash — many prompts in a loop
+
+```bash
+export CODEX_DEBUG_LLM_DUMP='C:/tmp/codex-dump'
+CODEX='/c/Development/research/codex/codex-rs/target/debug/codex.exe'
+
+while IFS= read -r p; do
+  echo "→ $p"
+  "$CODEX" exec --skip-git-repo-check "$p" < /dev/null
+done <<'EOF'
+Say hi in three words.
+Write a haiku about Rust.
+Explain WebSocket streaming briefly.
+EOF
+
+ls -1 "$CODEX_DEBUG_LLM_DUMP"
+```
+
+### Interactive TUI (also captures)
+
+The flag is `global = true`, so it works on every subcommand including
+the interactive TUI:
+
+```powershell
+# PowerShell
+$env:CODEX_DEBUG_LLM_DUMP = 'C:\tmp\codex-dump'
+& 'C:\Development\research\codex\codex-rs\target\debug\codex.exe'
+```
+
+```bash
+# Git Bash
+export CODEX_DEBUG_LLM_DUMP='C:/tmp/codex-dump'
+/c/Development/research/codex/codex-rs/target/debug/codex.exe
+```
+
+Note for Git Bash / MSYS / mintty: the codex TUI is a Windows console
+app and `mintty` (the default Git Bash terminal) can occasionally
+mangle terminal control sequences. If the UI looks broken, run from
+Windows Terminal / PowerShell / cmd, or prefix with `winpty`:
+
+```bash
+winpty /c/Development/research/codex/codex-rs/target/debug/codex.exe
+```
+
+Each top-level conversation in one TUI run is one session folder (the
+TUI keeps the same thread until you start a new chat). Fork or resume
+flows produce additional folders.
+
+### Quick-look at the freshest dump
+
+```powershell
+$d = Get-ChildItem $env:CODEX_DEBUG_LLM_DUMP -Directory |
+  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$d.FullName
+(Get-Content (Join-Path $d.FullName 'manifest.json') | ConvertFrom-Json).model
+'{0:N0} ws frames' -f (Get-Content (Join-Path $d.FullName 'ws-events.ndjson')).Count
+```
+
+### One-line event-flow summary
+
+```powershell
+Get-Content "$($d.FullName)\ws-events.ndjson" |
   ForEach-Object { $o = $_ | ConvertFrom-Json; "{0,8} {1,9} {2}" -f
     $o.direction, ($o.ts_ms % 100000), $o.body.type }
+```
+
+## VS Code Codex extension — can it use the custom build?
+
+Short answer: **the marketplace extension uses its own bundled `codex`
+binary**, so by default it doesn't pick up the custom build.
+
+The VS Code extension shells out to
+[`codex app-server`](../../codex-rs/app-server/README.md) (JSON-RPC over
+stdio). Two ways to redirect it onto your custom build:
+
+1. **Check the extension settings for an executable-path override**
+   (search VS Code settings for `codex` → look for a binary / executable
+   / CLI path setting). If it has one, point it at
+   `C:\Development\research\codex\codex-rs\target\debug\codex.exe` and
+   set `CODEX_DEBUG_LLM_DUMP` as a user-level env var so the extension
+   inherits it.
+
+2. **Replace the bundled binary** at
+   `%USERPROFILE%\.vscode\extensions\openai.chatgpt-*\bin\codex.exe`
+   with a copy of your debug build. Fragile — any extension update
+   overwrites it — but works in a pinch.
+
+For day-to-day capture I'd stay in a terminal (PowerShell or Git Bash)
+using the cheat sheet above and only open the VS Code extension when
+you want its UI features. The dumps land in the same folder regardless
+of which front-end made the call.
+
+## Verification (initial smoke test)
+
+```powershell
+$env:CODEX_DEBUG_LLM_DUMP = 'C:\tmp\codex-dump'
+$codex = 'C:\Development\research\codex\codex-rs\target\debug\codex.exe'
+
+cmd /c "$codex exec --skip-git-repo-check ""Say hi in three words."" < NUL"
+cmd /c "$codex exec --skip-git-repo-check ""Write a haiku about Rust."" < NUL"
+
+Get-ChildItem -Recurse C:\tmp\codex-dump
+# Expected: two <thread-uuid> folders, each containing manifest.json + ws-events.ndjson
 ```
 
 ## See also

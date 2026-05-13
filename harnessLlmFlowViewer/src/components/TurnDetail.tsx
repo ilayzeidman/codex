@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Turn, OutputItem, WsEvent } from '../types';
-import { fmtBytes, fmtClock, fmtDurationMs, fmtNumber, truncate } from '../lib/format';
+import { fmtBytes, fmtClock, fmtDurationMs, fmtNumber } from '../lib/format';
+import { stringifyToolOutput } from '../lib/toolOutput';
 import { Stat } from './Stat';
 import { JsonView } from './JsonView';
 import { Copyable } from './Copyable';
+import { ExpandableValue } from './ExpandableValue';
 
 interface Props {
   turn: Turn;
@@ -28,9 +30,20 @@ export function TurnDetail({ turn, manifestStartedAtMs }: Props) {
         </h2>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Stat label="Duration" value={fmtDurationMs(turn.durationMs)} />
-        <Stat label="Time to first output" value={fmtDurationMs(turn.ttftMs)} accent="recv" />
+        <Stat
+          label="Time to first item"
+          value={fmtDurationMs(turn.ttftMs)}
+          accent="recv"
+          hint="first output_item.added"
+        />
+        <Stat
+          label="Time to first visible byte"
+          value={fmtDurationMs(turn.ttfvbMs)}
+          accent="recv"
+          hint="first text / args delta"
+        />
         <Stat label="Text delta bytes" value={fmtBytes(turn.textDeltaBytes)} accent="text" />
         <Stat label="Total tokens" value={fmtNumber(turn.usage?.total_tokens)} />
       </div>
@@ -153,31 +166,64 @@ function InputItemPreview({ item }: { item: any }) {
       .filter(Boolean)
       .join('\n');
     return (
-      <div className="whitespace-pre-wrap text-ink-200">
+      <div className="whitespace-pre-wrap text-ink-200 flex-1 min-w-0">
         <span className="text-ink-400 text-xs uppercase mr-2">{item.role ?? 'msg'}</span>
-        {truncate(text, 800)}
+        <ExpandableValue text={text} previewChars={800} />
       </div>
     );
   }
   if (item.type === 'function_call') {
+    const args = String(item.arguments ?? '');
     return (
-      <div className="font-mono text-xs">
-        <span className="text-accent-tool">{item.name}</span>
-        <span className="text-ink-400 mx-1">(</span>
-        <span className="text-ink-200">{truncate(item.arguments ?? '', 200)}</span>
+      <div className="font-mono text-xs flex-1 min-w-0">
+        <div>
+          <span className="text-accent-tool">{item.name}</span>
+          <span className="text-ink-400">(</span>
+        </div>
+        <ExpandableValue text={args} previewChars={200} prettyJson />
         <span className="text-ink-400">)</span>
       </div>
     );
   }
   if (item.type === 'function_call_output') {
+    const output = stringifyToolOutput(item.output);
     return (
-      <div className="font-mono text-xs">
-        <span className="text-ink-400">call_id={item.call_id} →</span>{' '}
-        <span className="text-ink-200">{truncate(String(item.output ?? ''), 400)}</span>
+      <div className="font-mono text-xs flex-1 min-w-0">
+        <div className="text-ink-400 mb-1">call_id={item.call_id} →</div>
+        <ExpandableValue text={output} previewChars={400} />
       </div>
     );
   }
-  return <div className="font-mono text-xs">{truncate(JSON.stringify(item), 400)}</div>;
+  if (item.type === 'custom_tool_call') {
+    // Echo of a prior custom_tool_call the model emitted. Input is freeform.
+    const input = String(item.input ?? '');
+    return (
+      <div className="font-mono text-xs flex-1 min-w-0">
+        <div>
+          <span className="text-accent-tool">{item.name}</span>
+          <span className="text-ink-500 ml-2">[custom]</span>
+        </div>
+        <ExpandableValue text={input} previewChars={300} />
+      </div>
+    );
+  }
+  if (item.type === 'custom_tool_call_output') {
+    const output = stringifyToolOutput(item.output);
+    return (
+      <div className="font-mono text-xs flex-1 min-w-0">
+        <div className="text-ink-400 mb-1">
+          call_id={item.call_id} →{' '}
+          {item.name && <span className="text-ink-500">[{item.name}]</span>}
+        </div>
+        <ExpandableValue text={output} previewChars={400} />
+      </div>
+    );
+  }
+  return (
+    <div className="font-mono text-xs flex-1 min-w-0">
+      <ExpandableValue text={JSON.stringify(item)} previewChars={400} prettyJson />
+    </div>
+  );
 }
 
 function OutputCard({ item, startTs }: { item: OutputItem; startTs: number }) {
@@ -228,6 +274,38 @@ function OutputCard({ item, startTs }: { item: OutputItem; startTs: number }) {
             </pre>
           </details>
         )}
+      </li>
+    );
+  }
+  if (item.kind === 'custom_tool_call') {
+    return (
+      <li className="bg-ink-900 border border-ink-700 rounded-md p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="px-1.5 py-0.5 text-[10px] uppercase rounded bg-accent-tool/20 text-accent-tool border border-accent-tool/40">
+              🧩 custom_tool_call
+            </span>
+            <span className="text-sm font-medium text-accent-tool font-mono">{item.name}</span>
+            {item.callId && (
+              <Copyable
+                value={item.callId}
+                className="text-xs text-ink-500 font-mono"
+                title="call_id (click to copy)"
+              />
+            )}
+          </div>
+          <span className="text-xs text-ink-500">
+            +{fmtDurationMs(offset)} → +{fmtDurationMs((item.doneTs ?? item.addedTs) - startTs)}
+          </span>
+        </div>
+        <div className="text-[11px] text-ink-500 mb-1">
+          Freeform input — streamed via <span className="font-mono">custom_tool_call_input.delta</span>
+          {' · '}
+          {item.input.length.toLocaleString()} chars
+        </div>
+        <pre className="font-mono text-xs whitespace-pre-wrap break-words bg-ink-950 border border-ink-800 rounded p-2 max-h-96 overflow-auto text-ink-200">
+          {item.input}
+        </pre>
       </li>
     );
   }

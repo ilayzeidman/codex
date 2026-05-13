@@ -57,20 +57,29 @@ body {
   cursor: pointer;
 }
 
-/* Hide native scrollbar gutter for slim look */
+/* Slim dark scrollbar, visible on ink-900/950 backgrounds. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 ::-webkit-scrollbar-track {
   background: #11151c;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a313c;
-  border-radius: 5px;
+  background: #566173; /* ink-500 — visibly contrasts the track */
+  border: 2px solid #11151c;
+  border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3d4654;
+  background: #7a8597; /* ink-400 */
+}
+::-webkit-scrollbar-corner {
+  background: #11151c;
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #566173 #11151c;
 }
 
 /* small dot pulse used on stream activity */

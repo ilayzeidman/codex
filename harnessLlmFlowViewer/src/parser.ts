@@ -3,6 +3,7 @@ import {
   HttpStreamChunk,
   Manifest,
   OutputItem,
+  ReconstructedCustomToolCall,
   ReconstructedFunctionCall,
   ReconstructedMessage,
   ReconstructedReasoning,
@@ -315,6 +316,17 @@ function segmentTurns(events: WsEvent[]): Turn[] {
           };
           itemsById.set(item.id, r);
           current.outputs.push(r);
+        } else if (item.type === 'custom_tool_call') {
+          const ctc: ReconstructedCustomToolCall = {
+            kind: 'custom_tool_call',
+            itemId: item.id,
+            callId: item.call_id,
+            name: item.name ?? '<unknown>',
+            input: typeof item.input === 'string' ? item.input : '',
+            addedTs: ev.ts_ms,
+          };
+          itemsById.set(item.id, ctc);
+          current.outputs.push(ctc);
         }
         break;
       }
@@ -329,6 +341,9 @@ function segmentTurns(events: WsEvent[]): Turn[] {
         current.textDeltaBytes += new TextEncoder().encode(delta).length;
         if (current.ttftMs === undefined) {
           current.ttftMs = ev.ts_ms - current.startTs;
+        }
+        if (current.ttfvbMs === undefined) {
+          current.ttfvbMs = ev.ts_ms - current.startTs;
         }
         break;
       }
@@ -353,6 +368,9 @@ function segmentTurns(events: WsEvent[]): Turn[] {
         if (current.ttftMs === undefined) {
           current.ttftMs = ev.ts_ms - current.startTs;
         }
+        if (current.ttfvbMs === undefined) {
+          current.ttfvbMs = ev.ts_ms - current.startTs;
+        }
         break;
       }
 
@@ -364,6 +382,36 @@ function segmentTurns(events: WsEvent[]): Turn[] {
             item.argsJson = ev.body.arguments;
           }
           item.argsParsed = safeJsonParse(item.argsJson);
+        }
+        break;
+      }
+
+      case 'response.custom_tool_call_input.delta': {
+        const id = ev.body.item_id;
+        const item = id ? itemsById.get(id) : undefined;
+        const delta: string = ev.body.delta ?? '';
+        if (item && item.kind === 'custom_tool_call') {
+          item.input += delta;
+        }
+        // Custom tool input is visible bytes on the wire (e.g. apply_patch
+        // streams the patch text byte-by-byte). Count toward delta bytes and
+        // TTFT/TTFVB just like text and function-call args.
+        current.textDeltaBytes += new TextEncoder().encode(delta).length;
+        if (current.ttftMs === undefined) {
+          current.ttftMs = ev.ts_ms - current.startTs;
+        }
+        if (current.ttfvbMs === undefined) {
+          current.ttfvbMs = ev.ts_ms - current.startTs;
+        }
+        break;
+      }
+
+      case 'response.custom_tool_call_input.done': {
+        const id = ev.body.item_id;
+        const item = id ? itemsById.get(id) : undefined;
+        if (item && item.kind === 'custom_tool_call' && typeof ev.body.input === 'string') {
+          // Prefer the authoritative final input (in case deltas were lossy).
+          item.input = ev.body.input;
         }
         break;
       }

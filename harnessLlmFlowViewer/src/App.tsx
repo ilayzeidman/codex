@@ -5,6 +5,7 @@ import { SessionHeader } from './components/SessionHeader';
 import { TurnList, View } from './components/TurnList';
 import { Overview } from './components/Overview';
 import { TurnDetail } from './components/TurnDetail';
+import { Conversation } from './components/Conversation';
 import { Insights } from './components/Insights';
 import { RawEventLog } from './components/RawEventLog';
 
@@ -31,6 +32,8 @@ export default function App() {
     ) : (
       <div className="p-6 text-accent-err">Turn {view.index} not found.</div>
     );
+  } else if (view.kind === 'conversation') {
+    main = <Conversation session={session} />;
   } else if (view.kind === 'insights') {
     main = <Insights session={session} />;
   } else if (view.kind === 'raw') {
@@ -48,7 +51,7 @@ export default function App() {
       />
       <div className="flex-1 grid grid-cols-[16rem_1fr] min-h-0">
         <TurnList session={session} view={view} onSelect={setView} />
-        <main className="min-h-0 overflow-hidden">{main}</main>
+        <main className="min-h-0 overflow-y-auto">{main}</main>
       </div>
     </div>
   );

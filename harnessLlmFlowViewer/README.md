@@ -54,14 +54,42 @@ session folder onto the page (or click **Choose folder**). The folder
 you drop is the one named after the thread UUID, e.g.
 `C:\tmp\dump-metering\019e1ab2-ce48-7791-8758-ad9e680d780d\`.
 
-To capture a dump to feed it, see the
-[walkthrough](../codex-dump-walkthrough.md) and the
-[wiki page](../wiki/operations/debug-llm-dump.md). Short version:
+## Capture a fresh dump to view
+
+The cheat sheet (PowerShell + bash + loops + VS Code extension notes)
+lives in the wiki:
+**[wiki/operations/debug-llm-dump.md → Cheat sheet](../wiki/operations/debug-llm-dump.md#cheat-sheet--capture-more-dumps)**.
+
+Two most common one-liners:
 
 ```powershell
-$env:CODEX_DEBUG_LLM_DUMP = 'C:\tmp\dump'
-codex exec "your prompt"
+# PowerShell — single prompt
+$env:CODEX_DEBUG_LLM_DUMP = 'C:\tmp\codex-dump'
+$codex = 'C:\Development\research\codex\codex-rs\target\debug\codex.exe'
+cmd /c "$codex exec --skip-git-repo-check ""your prompt here"" < NUL"
 ```
+
+```bash
+# Git Bash — single prompt
+export CODEX_DEBUG_LLM_DUMP='C:/tmp/codex-dump'
+/c/Development/research/codex/codex-rs/target/debug/codex.exe \
+  exec --skip-git-repo-check "your prompt here" < /dev/null
+```
+
+`--skip-git-repo-check` is required if your shell's working directory
+isn't inside a git repo — codex refuses by default with
+`Not inside a trusted directory…`. The flag belongs to the `exec`
+subcommand, so it must come **after** `exec`. Alternative: use root
+flag `-C C:\Development\research\codex` before `exec` to point codex
+at the codex source tree (which is a git repo).
+
+Each `codex exec` produces one new `<thread-uuid>` folder under
+`$CODEX_DEBUG_LLM_DUMP`. Drop that folder onto the viewer to inspect
+it. Longer story (loops, TUI capture, VS Code extension) → cheat sheet
+above.
+
+For a worked example walking through a real prompt + dump, see
+[`../codex-dump-walkthrough.md`](../codex-dump-walkthrough.md).
 
 ## Production build
 

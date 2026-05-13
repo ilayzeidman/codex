@@ -1,7 +1,12 @@
-import { Session, Turn } from '../types';
+import { Session, Turn, isToolCall } from '../types';
 import { fmtDurationMs } from '../lib/format';
 
-type View = { kind: 'overview' } | { kind: 'turn'; index: number } | { kind: 'insights' } | { kind: 'raw' };
+type View =
+  | { kind: 'overview' }
+  | { kind: 'turn'; index: number }
+  | { kind: 'conversation' }
+  | { kind: 'insights' }
+  | { kind: 'raw' };
 
 interface Props {
   session: Session;
@@ -21,6 +26,12 @@ export function TurnList({ session, view, onSelect }: Props) {
           onClick={() => onSelect({ kind: 'overview' })}
           label="Overview"
           icon="🗂"
+        />
+        <Row
+          active={view.kind === 'conversation'}
+          onClick={() => onSelect({ kind: 'conversation' })}
+          label="Conversation"
+          icon="🧵"
         />
         <Row
           active={view.kind === 'insights'}
@@ -90,7 +101,7 @@ function TurnRow({
   active: boolean;
   onClick: () => void;
 }) {
-  const toolCalls = turn.outputs.filter(o => o.kind === 'function_call').length;
+  const toolCalls = turn.outputs.filter(isToolCall).length;
   const hasMessage = turn.outputs.some(o => o.kind === 'message' && o.text.length > 0);
   return (
     <li>
