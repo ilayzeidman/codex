@@ -22,16 +22,16 @@ export function TurnList({ session, view, onSelect }: Props) {
       </div>
       <ul className="px-2 py-2 space-y-1">
         <Row
-          active={view.kind === 'overview'}
-          onClick={() => onSelect({ kind: 'overview' })}
-          label="Overview"
-          icon="🗂"
-        />
-        <Row
           active={view.kind === 'conversation'}
           onClick={() => onSelect({ kind: 'conversation' })}
           label="Conversation"
-          icon="🧵"
+          icon={'\u{1f9f5}'}
+        />
+        <Row
+          active={view.kind === 'overview'}
+          onClick={() => onSelect({ kind: 'overview' })}
+          label="Overview"
+          icon={'\u{1f5c2}'}
         />
         <Row
           active={view.kind === 'insights'}

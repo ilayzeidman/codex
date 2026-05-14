@@ -11,7 +11,7 @@ import { RawEventLog } from './components/RawEventLog';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [view, setView] = useState<View>({ kind: 'overview' });
+  const [view, setView] = useState<View>({ kind: 'conversation' });
 
   if (!session) {
     return <FolderPicker onLoaded={setSession} />;
@@ -46,7 +46,7 @@ export default function App() {
         session={session}
         onReset={() => {
           setSession(null);
-          setView({ kind: 'overview' });
+          setView({ kind: 'conversation' });
         }}
       />
       <div className="flex-1 grid grid-cols-[16rem_1fr] min-h-0">
