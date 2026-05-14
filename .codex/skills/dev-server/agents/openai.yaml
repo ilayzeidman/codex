@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dev Server"
+  short_description: "Start a local web dev server (Vite/Next/CRA) from a sandboxed shell without tripping Windows process-spawn gotchas"
+  default_prompt: "Start the project's dev server using the documented pattern: invoke `pwsh -NoProfile -File .codex/skills/dev-server/scripts/start_dev_server.ps1 -Cwd <absolute-project-path>` in one tool call and read the JSON output. Report `{pid, url, log}` back to the user with a one-line note that you left the server running. Do NOT run `npm run dev` in the foreground — it will trip the shell timeout because dev servers don't exit. Do NOT assume the configured port matches the bound port — read it from the script's `url` field. After the server is up, the URL is ready for browser verification via the Chrome DevTools MCP."
