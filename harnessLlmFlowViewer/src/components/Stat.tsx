@@ -2,7 +2,7 @@ interface Props {
   label: string;
   value: React.ReactNode;
   hint?: string;
-  accent?: 'default' | 'sent' | 'recv' | 'tool' | 'text';
+  accent?: 'default' | 'sent' | 'recv' | 'tool' | 'text' | 'err';
 }
 
 export function Stat({ label, value, hint, accent = 'default' }: Props) {
@@ -12,6 +12,7 @@ export function Stat({ label, value, hint, accent = 'default' }: Props) {
     recv: 'text-accent-recv',
     tool: 'text-accent-tool',
     text: 'text-accent-text',
+    err: 'text-accent-err',
   }[accent];
   return (
     <div className="bg-ink-800 border border-ink-700 rounded-lg p-3">

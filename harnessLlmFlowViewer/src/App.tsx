@@ -23,6 +23,7 @@ export default function App() {
       <Overview
         session={session}
         onJumpToTurn={i => setView({ kind: 'turn', index: i })}
+        onJumpToInsights={() => setView({ kind: 'insights' })}
       />
     );
   } else if (view.kind === 'turn') {
@@ -33,7 +34,12 @@ export default function App() {
       <div className="p-6 text-accent-err">Turn {view.index} not found.</div>
     );
   } else if (view.kind === 'conversation') {
-    main = <Conversation session={session} />;
+    main = (
+      <Conversation
+        session={session}
+        onJumpToInsights={() => setView({ kind: 'insights' })}
+      />
+    );
   } else if (view.kind === 'insights') {
     main = <Insights session={session} />;
   } else if (view.kind === 'raw') {

@@ -134,11 +134,19 @@ export function buildConversationModel(session: Session): ConversationModel {
 
   // call_id → originating turn index for echoed-back tool calls.
   const callIdToTurn = new Map<string, number>();
+  // IDs that originated as outputs in some prior turn. When the harness
+  // resumes a session after an interrupt, codex re-injects the entire prior
+  // conversation as the next turn's `input` — including function_calls,
+  // assistant messages, and reasoning items that were originally outputs.
+  // We use these sets to recognise replays and skip them, otherwise the
+  // conversation pane shows every step twice.
+  const outputCallIds = new Set<string>();
   for (const turn of turns) {
     for (const out of turn.outputs) {
       if (isToolCall(out) && out.callId && !callIdToTurn.has(out.callId)) {
         callIdToTurn.set(out.callId, turn.index);
       }
+      if (isToolCall(out) && out.callId) outputCallIds.add(out.callId);
     }
   }
 
@@ -147,13 +155,20 @@ export function buildConversationModel(session: Session): ConversationModel {
   // so users see them rather than wonder why "Turn 1" silently disappears.
   type Entry = { source: 'input' | 'output' | 'prewarm'; turnIndex: number; raw: any };
   const rope: Entry[] = [];
+  // Track which function_call_output call_ids we've already injected so a
+  // duplicate replayed by a later turn's input doesn't add a phantom row.
+  const seenOutputCallIds = new Set<string>();
   for (const turn of turns) {
     const inputs: any[] = Array.isArray(turn.request?.input) ? turn.request.input : [];
     if (inputs.length === 0 && turn.outputs.length === 0) {
       rope.push({ source: 'prewarm', turnIndex: turn.index, raw: turn });
       continue;
     }
-    for (const it of inputs) rope.push({ source: 'input', turnIndex: turn.index, raw: it });
+    for (const it of inputs) {
+      if (isResumeReplay(it, outputCallIds, seenOutputCallIds)) continue;
+      rope.push({ source: 'input', turnIndex: turn.index, raw: it });
+      if (isOutputType(it) && it?.call_id) seenOutputCallIds.add(it.call_id);
+    }
     for (const out of turn.outputs) rope.push({ source: 'output', turnIndex: turn.index, raw: out });
   }
 
@@ -252,6 +267,34 @@ function isOutputType(it: any): boolean {
   return it?.type === 'function_call_output' || it?.type === 'custom_tool_call_output';
 }
 
+/** When codex resumes a session after an interrupt, the next turn's `input`
+ *  carries the entire prior conversation as a sequence of replayed items —
+ *  function_calls the model previously emitted, the assistant messages it
+ *  streamed, and its encrypted reasoning blobs. These all already appear in
+ *  earlier turns' `outputs`, so showing them again clutters the conversation
+ *  flow with phantom "awaiting output" rows. Detect them here. */
+function isResumeReplay(
+  it: any,
+  outputCallIds: Set<string>,
+  seenOutputCallIds: Set<string>,
+): boolean {
+  if (!it || typeof it !== 'object') return false;
+  // function_call as input → always a replay (model only emits these as outputs).
+  if (it.type === 'function_call' || it.type === 'custom_tool_call') {
+    return Boolean(it.call_id && outputCallIds.has(it.call_id));
+  }
+  // function_call_output appears once normally (in the turn after the call).
+  // If we've already injected one for this call_id, the duplicate is a replay.
+  if (isOutputType(it)) {
+    return Boolean(it.call_id && seenOutputCallIds.has(it.call_id));
+  }
+  // Assistant messages and reasoning in `input` come from the model, so any
+  // occurrence in the input array is by definition a replay of a prior output.
+  if (it.type === 'message' && it.role === 'assistant') return true;
+  if (it.type === 'reasoning') return true;
+  return false;
+}
+
 function stringifyOutput(out: any): string {
   if (typeof out === 'string') return out;
   if (out === undefined || out === null) return '';
@@ -294,6 +337,14 @@ function classifyOutput(
       wallTimeMs,
       failureReason: exitCode !== 0 ? extractFirstErrorLine(body) : undefined,
     };
+  }
+  // MCP-style tools (chrome_devtools, etc.) — codex prepends a `Wall time:` header
+  // and a JSON payload like `[{"type":"text","text":"..."}]`. Their presence
+  // means the tool transport succeeded; content keywords inside the JSON
+  // (`[error]` console lines, "Unable to navigate" pages, etc.) describe the
+  // *world*, not the tool call. Treat as ok and let the user inspect the body.
+  if (wallMatch) {
+    return { status: 'ok', wallTimeMs: Math.round(Number(wallMatch[1]) * 1000) };
   }
   // Some tools return a success/error JSON or string. Heuristics:
   if (/^success\b/i.test(body)) return { status: 'ok' };

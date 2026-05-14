@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Session, isToolCall } from '../types';
 import { fmtDurationMs, fmtIso } from '../lib/format';
+import { computeSessionInsights } from '../lib/sessionInsights';
 import { Stat } from './Stat';
 import { Copyable } from './Copyable';
 
@@ -26,6 +27,8 @@ export function SessionHeader({ session, onReset }: Props) {
     }
     return { sent, received, toolCalls, totalTokens, total: session.wsEvents.length };
   }, [session]);
+
+  const insights = useMemo(() => computeSessionInsights(session), [session]);
 
   const startedLabel = m.started_at_unix_ms ? fmtIso(m.started_at_unix_ms) : '—';
 
@@ -59,20 +62,34 @@ export function SessionHeader({ session, onReset }: Props) {
         </button>
       </div>
 
-      <div className="px-6 pb-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="px-6 pb-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-7 gap-3">
         <Stat label="Turns" value={session.turns.length} />
         <Stat
-          label="Duration"
-          value={fmtDurationMs(session.totalDurationMs)}
-          hint="sum of completed-vs-start per turn"
+          label="Wall clock"
+          value={fmtDurationMs(insights.wallClockMs)}
+          hint="first event → last event"
+        />
+        <Stat
+          label="API time"
+          value={fmtDurationMs(insights.activeApiMs)}
+          hint={`out-of-api ${fmtDurationMs(insights.outOfApiMs)}`}
         />
         <Stat label="Tool calls" value={counts.toolCalls} accent="tool" />
+        <Stat
+          label="Failures"
+          value={insights.totalFailures}
+          accent={insights.totalFailures > 0 ? 'err' : 'default'}
+          hint={
+            insights.wastedCallCount > 0
+              ? `${insights.wastedCallCount} redundant repeat${insights.wastedCallCount === 1 ? '' : 's'}`
+              : undefined
+          }
+        />
         <Stat
           label="WS events"
           value={counts.total}
           hint={`${counts.sent} sent · ${counts.received} received`}
         />
-        <Stat label="HTTP calls" value={session.httpCalls.length} />
         <Stat label="Total tokens" value={counts.totalTokens ? counts.totalTokens.toLocaleString() : '—'} />
       </div>
     </header>

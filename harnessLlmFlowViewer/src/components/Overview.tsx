@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Session, Turn, isToolCall } from '../types';
 import { fmtBytes, fmtDurationMs, fmtNumber, truncate } from '../lib/format';
+import { SessionStory } from './SessionStory';
 
 interface Props {
   session: Session;
   onJumpToTurn: (index: number) => void;
+  onJumpToInsights?: () => void;
 }
 
-export function Overview({ session, onJumpToTurn }: Props) {
+export function Overview({ session, onJumpToTurn, onJumpToInsights }: Props) {
   const [hoveredTurn, setHoveredTurn] = useState<number | null>(null);
   const turns = session.turns;
   // Anchor the timeline to the first turn's startTs — the manifest's
@@ -26,6 +28,12 @@ export function Overview({ session, onJumpToTurn }: Props) {
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto">
+      <SessionStory
+        session={session}
+        onJumpToTurn={onJumpToTurn}
+        onJumpToInsights={onJumpToInsights}
+      />
+
       <Section title="Session timeline">
         <p className="text-ink-400 text-sm mb-4">
           Each bar is one turn (a <code className="text-ink-200">response.create</code> →{' '}

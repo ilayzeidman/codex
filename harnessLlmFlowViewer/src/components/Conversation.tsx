@@ -14,16 +14,23 @@ import { ExpandableValue } from './ExpandableValue';
 import { ApplyPatchBody } from './ApplyPatchBody';
 import { JsonView } from './JsonView';
 import { Copyable } from './Copyable';
+import { SessionStory } from './SessionStory';
 
 interface Props {
   session: Session;
+  onJumpToInsights?: () => void;
 }
 
 type Bulk = 'default' | 'all-open' | 'all-closed';
 type FilterMode = 'all' | 'failures' | 'tools' | 'messages';
 
-export function Conversation({ session }: Props) {
+export function Conversation({ session, onJumpToInsights }: Props) {
   const model = useMemo(() => buildConversationModel(session), [session]);
+
+  const scrollToTurn = (turnIndex: number) => {
+    const el = document.getElementById(`turn-divider-${turnIndex}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const allSteps = model.steps;
   const [hideReasoning, setHideReasoning] = useState(false);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -129,6 +136,12 @@ export function Conversation({ session }: Props) {
       </div>
 
       <div className="p-6 max-w-5xl mx-auto">
+        <SessionStory
+          session={session}
+          onJumpToInsights={onJumpToInsights}
+          onJumpToTurn={scrollToTurn}
+          compact
+        />
         <p className="text-ink-400 text-sm mb-4 max-w-3xl">
           The full algorithm as one linear flow — user prompt → reasoning → tool call → tool output → … → final
           message. Each step is collapsible. Tool calls and their matching outputs are paired (output indented
@@ -216,7 +229,8 @@ function renderWithTurnDividers(
       out.push(
         <li
           key={`divider-${step.stepIndex}-${step.turnIndex}`}
-          className="sticky top-[5.5rem] z-[5] bg-ink-950/90 backdrop-blur py-1 px-2 text-[11px] text-ink-400 border-l-2 border-accent-tool/40 flex items-center gap-3 flex-wrap"
+          id={`turn-divider-${step.turnIndex}`}
+          className="sticky top-[5.5rem] z-[5] bg-ink-950/90 backdrop-blur py-1 px-2 text-[11px] text-ink-400 border-l-2 border-accent-tool/40 flex items-center gap-3 flex-wrap scroll-mt-32"
         >
           <span className="font-semibold text-ink-300">Turn {step.turnIndex}</span>
           {t?.durationMs !== undefined && (

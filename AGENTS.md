@@ -1,3 +1,15 @@
+# Browser-driven verification (Chrome DevTools MCP)
+
+When the user asks you to verify a web UI "in the browser", "end-to-end",
+"e2e", or "with a real page" — and a `mcp__chrome_devtools__*` tool family is
+visible to you — use it. Do not hand-roll a `chrome.exe` + remote-debugging-port
++ CDP-fetch loop. The MCP is configured for this repo in `~/.codex/config.toml`
+under `[mcp_servers.chrome_devtools]`.
+
+The tools you should reach for first (full list at
+https://github.com/ChromeDevTools/chrome-devtools-mcp):
+
+
 # Rust/codex-rs
 
 In the codex-rs folder where the rust code lives:
