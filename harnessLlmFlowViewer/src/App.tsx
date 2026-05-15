@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Session } from './types';
 import { FolderPicker } from './components/FolderPicker';
 import { SessionHeader } from './components/SessionHeader';
-import { TurnList, View } from './components/TurnList';
+import { RequestList, View } from './components/RequestList';
 import { Overview } from './components/Overview';
-import { TurnDetail } from './components/TurnDetail';
+import { RequestDetail } from './components/RequestDetail';
 import { Conversation } from './components/Conversation';
 import { Insights } from './components/Insights';
 import { RawEventLog } from './components/RawEventLog';
@@ -22,16 +22,16 @@ export default function App() {
     main = (
       <Overview
         session={session}
-        onJumpToTurn={i => setView({ kind: 'turn', index: i })}
+        onJumpToRequest={i => setView({ kind: 'request', index: i })}
         onJumpToInsights={() => setView({ kind: 'insights' })}
       />
     );
-  } else if (view.kind === 'turn') {
-    const turn = session.turns.find(t => t.index === view.index);
-    main = turn ? (
-      <TurnDetail turn={turn} manifestStartedAtMs={session.manifest.started_at_unix_ms} />
+  } else if (view.kind === 'request') {
+    const request = session.requests.find(r => r.index === view.index);
+    main = request ? (
+      <RequestDetail request={request} manifestStartedAtMs={session.manifest.started_at_unix_ms} />
     ) : (
-      <div className="p-6 text-accent-err">Turn {view.index} not found.</div>
+      <div className="p-6 text-accent-err">Request {view.index} not found.</div>
     );
   } else if (view.kind === 'conversation') {
     main = (
@@ -56,7 +56,7 @@ export default function App() {
         }}
       />
       <div className="flex-1 grid grid-cols-[16rem_1fr] min-h-0">
-        <TurnList session={session} view={view} onSelect={setView} />
+        <RequestList session={session} view={view} onSelect={setView} />
         <main className="min-h-0 overflow-y-auto">{main}</main>
       </div>
     </div>

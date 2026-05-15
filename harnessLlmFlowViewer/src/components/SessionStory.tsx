@@ -6,7 +6,7 @@ import { fmtDurationMs, fmtNumber, truncate } from '../lib/format';
 interface Props {
   session: Session;
   onJumpToInsights?: () => void;
-  onJumpToTurn?: (turnIndex: number) => void;
+  onJumpToRequest?: (requestIndex: number) => void;
   /** Compact mode hides the headline and trims body — used inline above the
    *  Conversation flow so it doesn't dominate the viewport. */
   compact?: boolean;
@@ -14,18 +14,18 @@ interface Props {
 
 /** A one-glance "what happened" panel that puts the user's prompt, the model's
  *  final summary, and the inefficiency markers (failures, repeats, idle time)
- *  side by side. The Conversation/Overview pages used to bury this in turn 2
- *  and turn 41 respectively. */
-export function SessionStory({ session, onJumpToInsights, onJumpToTurn, compact }: Props) {
+ *  side by side. The Conversation/Overview pages used to bury this in request 2
+ *  and request 41 respectively. */
+export function SessionStory({ session, onJumpToInsights, onJumpToRequest, compact }: Props) {
   const i = useMemo(() => computeSessionInsights(session), [session]);
 
-  // What fraction of turns produced a visible assistant message vs were
-  // pure tool-call/reasoning turns? Low ratio = chatty preamble missing OR
+  // What fraction of requests produced a visible assistant message vs were
+  // pure tool-call/reasoning requests? Low ratio = chatty preamble missing OR
   // model talking to itself a lot.
-  const messageTurnCount = useMemo(() => {
+  const messageRequestCount = useMemo(() => {
     const seen = new Set<number>();
-    for (const t of session.turns) {
-      if (t.outputs.some(o => o.kind === 'message' && o.text.length > 0)) seen.add(t.index);
+    for (const r of session.requests) {
+      if (r.outputs.some(o => o.kind === 'message' && o.text.length > 0)) seen.add(r.index);
     }
     return seen.size;
   }, [session]);
@@ -33,8 +33,8 @@ export function SessionStory({ session, onJumpToInsights, onJumpToTurn, compact 
   const idlePct = i.wallClockMs > 0 ? Math.round((i.outOfApiMs / i.wallClockMs) * 100) : 0;
   const reasoningPct = i.activeApiMs > 0 ? Math.round((i.totalReasoningMs / i.activeApiMs) * 100) : 0;
   const tokenGrowth =
-    i.inputTokensFirstTurn !== undefined && i.inputTokensLastTurn !== undefined
-      ? i.inputTokensLastTurn - i.inputTokensFirstTurn
+    i.inputTokensFirstRequest !== undefined && i.inputTokensLastRequest !== undefined
+      ? i.inputTokensLastRequest - i.inputTokensFirstRequest
       : undefined;
 
   return (
@@ -48,7 +48,7 @@ export function SessionStory({ session, onJumpToInsights, onJumpToTurn, compact 
         <header className="px-4 py-2.5 border-b border-ink-700 flex items-center gap-3">
           <h3 className="text-sm font-semibold text-ink-100">Session story</h3>
           <span className="text-[11px] text-ink-500">
-            {session.turns.length} turn{session.turns.length === 1 ? '' : 's'} ·{' '}
+            {session.requests.length} request{session.requests.length === 1 ? '' : 's'} ·{' '}
             {fmtDurationMs(i.wallClockMs)} wall clock
           </span>
         </header>
@@ -59,10 +59,10 @@ export function SessionStory({ session, onJumpToInsights, onJumpToTurn, compact 
             <PromptBlock
               icon="👤"
               label="User prompt"
-              turn={i.userPromptTurn}
+              request={i.userPromptRequest}
               text={i.userPrompt}
               accent="text"
-              onJump={onJumpToTurn}
+              onJump={onJumpToRequest}
             />
           ) : (
             <div className="text-xs italic text-ink-500">No user prompt detected.</div>
@@ -71,10 +71,10 @@ export function SessionStory({ session, onJumpToInsights, onJumpToTurn, compact 
             <PromptBlock
               icon="🤖"
               label="Final assistant message"
-              turn={i.finalAssistantTurn}
+              request={i.finalAssistantRequest}
               text={i.finalAssistantMessage}
               accent="recv"
-              onJump={onJumpToTurn}
+              onJump={onJumpToRequest}
             />
           )}
         </div>
@@ -116,13 +116,13 @@ export function SessionStory({ session, onJumpToInsights, onJumpToTurn, compact 
             <Callout
               label="Input-token growth"
               value={`+${fmtNumber(tokenGrowth)}`}
-              sub={`turn 1 ${fmtNumber(i.inputTokensFirstTurn)} → turn ${session.turns.length} ${fmtNumber(i.inputTokensLastTurn)}`}
+              sub={`request 1 ${fmtNumber(i.inputTokensFirstRequest)} → request ${session.requests.length} ${fmtNumber(i.inputTokensLastRequest)}`}
               tone={tokenGrowth > 20000 ? 'warn' : 'neutral'}
             />
           )}
           <Callout
-            label="Turns with model message"
-            value={`${messageTurnCount} / ${session.turns.length}`}
+            label="Requests with model message"
+            value={`${messageRequestCount} / ${session.requests.length}`}
             sub="rest were reasoning + tool-call only"
             tone="neutral"
           />
@@ -143,17 +143,17 @@ export function SessionStory({ session, onJumpToInsights, onJumpToTurn, compact 
 function PromptBlock({
   icon,
   label,
-  turn,
+  request,
   text,
   accent,
   onJump,
 }: {
   icon: string;
   label: string;
-  turn?: number;
+  request?: number;
   text: string;
   accent: 'text' | 'recv';
-  onJump?: (turnIndex: number) => void;
+  onJump?: (requestIndex: number) => void;
 }) {
   const accentCls = accent === 'text' ? 'text-accent-text' : 'text-accent-recv';
   const trimmed = truncate(text.trim(), 720);
@@ -162,9 +162,9 @@ function PromptBlock({
       <div className="flex items-center gap-2 mb-1.5 text-[11px] uppercase tracking-wide">
         <span aria-hidden>{icon}</span>
         <span className={accentCls}>{label}</span>
-        {turn !== undefined && (
+        {request !== undefined && (
           <button
-            onClick={onJump ? () => onJump(turn) : undefined}
+            onClick={onJump ? () => onJump(request) : undefined}
             className={
               'ml-auto font-mono ' +
               (onJump
@@ -172,9 +172,9 @@ function PromptBlock({
                 : 'text-ink-500')
             }
             disabled={!onJump}
-            title={onJump ? `Jump to turn ${turn}` : undefined}
+            title={onJump ? `Jump to request ${request}` : undefined}
           >
-            Turn {turn}
+            Request {request}
           </button>
         )}
       </div>

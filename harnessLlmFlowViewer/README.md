@@ -1,8 +1,15 @@
 # Codex Harness · LLM Flow Viewer
 
 A local React + Vite app that parses a `--debug-llm-dump` session folder
-and renders the per-turn LLM flow as a navigable, annotated UI. Pairs with
-the [debug-llm-dump operations page](../wiki/operations/debug-llm-dump.md).
+and renders the per-request LLM flow as a navigable, annotated UI. Pairs
+with the [debug-llm-dump operations page](../wiki/operations/debug-llm-dump.md).
+
+> **Note on vocabulary.** Each row in this viewer is one HTTP sampling
+> request (`response.create` → `response.completed`). That is **not**
+> the same as a codex-core "turn" (one user submission), which can span
+> many such requests when the model emits function calls. See
+> [`../wiki/operations/turn-loop.md`](../wiki/operations/turn-loop.md)
+> for the codex-core definition.
 
 Everything is parsed in the browser — no upload, no backend.
 
@@ -10,9 +17,9 @@ Everything is parsed in the browser — no upload, no backend.
 
 For each session folder (named after the codex `thread_id`):
 
-- **Overview** — a timeline bar per turn, scaled by wall-clock duration,
+- **Overview** — a timeline bar per request, scaled by wall-clock duration,
   annotated with tool-call count, message indicator, and token total.
-- **Turn detail** — for each turn:
+- **Request detail** — for each request:
   - **Outbound `response.create`**: input items, tools exposed, system
     instructions size, plus a structured preview of each input item
     (developer prompt, user prompt, prior `function_call` /
@@ -22,11 +29,11 @@ For each session folder (named after the codex `thread_id`):
     `output_text.delta` frames), function calls with their JSON
     arguments (reassembled from `function_call_arguments.delta`).
   - **Timings**: time-to-first-delta, per-item start/end offsets,
-    total turn duration.
+    total request duration.
   - **Token usage** pulled from `response.completed.usage`.
   - Collapsed views of the full raw event list and the verbatim
-    `response.create` / `response.completed` JSON for the turn.
-- **Insights** — per-turn duration vs token bars, tool-call frequency,
+    `response.create` / `response.completed` JSON for the request.
+- **Insights** — per-request duration vs token bars, tool-call frequency,
   and a histogram over every WS event type observed.
 - **Raw event log** — searchable + filterable view over every NDJSON
   line, with JSON inspector on click.
@@ -109,30 +116,30 @@ src/
 ├── App.tsx                  # top-level layout + view switcher
 ├── main.tsx                 # React entry
 ├── index.css                # tailwind base + scrollbar/json tweaks
-├── types.ts                 # Session / Turn / OutputItem types
+├── types.ts                 # Session / Request / OutputItem types
 ├── parser.ts                # NDJSON + HTTP-triplet → Session
 ├── lib/
 │   └── format.ts            # duration, bytes, iso, clock helpers
 └── components/
     ├── FolderPicker.tsx     # drag-drop / directory picker entry
     ├── SessionHeader.tsx    # manifest banner + totals
-    ├── TurnList.tsx         # sidebar nav (overview / insights / raw / turns)
+    ├── RequestList.tsx      # sidebar nav (overview / insights / raw / requests)
     ├── Overview.tsx         # timeline + "what you're looking at" panel
-    ├── TurnDetail.tsx       # per-turn breakdown
+    ├── RequestDetail.tsx    # per-request breakdown
     ├── Insights.tsx         # bar charts
     ├── RawEventLog.tsx      # filterable NDJSON log
     ├── JsonView.tsx         # dark-themed react-json-view-lite wrapper
     └── Stat.tsx             # numeric tile
 ```
 
-## How turn segmentation works
+## How request segmentation works
 
-A turn begins on each outbound `response.create` (sent) and ends on the
-next `response.completed` (received). Events between those two
-brackets are attributed to the turn, plus the `response.create` itself
-so the turn detail can render the full outbound payload.
+A request begins on each outbound `response.create` (sent) and ends on
+the next `response.completed` (received). Events between those two
+brackets are attributed to the request, plus the `response.create` itself
+so the request detail can render the full outbound payload.
 
-For HTTP-transport dumps the segmentation is one turn per
+For HTTP-transport dumps the segmentation is one request per
 request-stream-response triplet — they're sorted by sequence number.
 
 ## What gets reconstructed
@@ -143,7 +150,7 @@ request-stream-response triplet — they're sorted by sequence number.
 | `response.output_item.added` (type=function_call) + `function_call_arguments.delta` × N + `function_call_arguments.done` | One `ReconstructedFunctionCall` with the full JSON args (parsed when valid) |
 | `response.output_item.added` (type=reasoning) + `response.output_item.done` | One `ReconstructedReasoning` placeholder — encrypted reasoning content is not stored in the dump in plaintext |
 | `response.completed.response.usage` | `TokenUsage` (input / cached / output / reasoning / total) |
-| `codex.rate_limits` | Attached to the turn |
+| `codex.rate_limits` | Attached to the request |
 
 See [`src/parser.ts`](src/parser.ts) for the authoritative state
 machine.

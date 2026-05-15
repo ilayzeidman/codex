@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Visualizer for codex --debug-llm-dump folders. Renders WS/HTTP dumps as a turn-by-turn flow.",
+  "description": "Visualizer for codex --debug-llm-dump folders. Renders WS/HTTP dumps as a request-by-request flow.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

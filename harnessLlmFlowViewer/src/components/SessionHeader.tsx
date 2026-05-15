@@ -21,9 +21,9 @@ export function SessionHeader({ session, onReset }: Props) {
     }
     let toolCalls = 0;
     let totalTokens = 0;
-    for (const t of session.turns) {
-      for (const o of t.outputs) if (isToolCall(o)) toolCalls++;
-      totalTokens += t.usage?.total_tokens ?? 0;
+    for (const r of session.requests) {
+      for (const o of r.outputs) if (isToolCall(o)) toolCalls++;
+      totalTokens += r.usage?.total_tokens ?? 0;
     }
     return { sent, received, toolCalls, totalTokens, total: session.wsEvents.length };
   }, [session]);
@@ -63,7 +63,7 @@ export function SessionHeader({ session, onReset }: Props) {
       </div>
 
       <div className="px-6 pb-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-7 gap-3">
-        <Stat label="Turns" value={session.turns.length} />
+        <Stat label="Requests" value={session.requests.length} />
         <Stat
           label="Wall clock"
           value={fmtDurationMs(insights.wallClockMs)}

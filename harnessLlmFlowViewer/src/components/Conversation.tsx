@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Session, Turn } from '../types';
+import { Session, Request } from '../types';
 import {
   buildConversationModel,
   ConversationStep,
@@ -27,8 +27,8 @@ type FilterMode = 'all' | 'failures' | 'tools' | 'messages';
 export function Conversation({ session, onJumpToInsights }: Props) {
   const model = useMemo(() => buildConversationModel(session), [session]);
 
-  const scrollToTurn = (turnIndex: number) => {
-    const el = document.getElementById(`turn-divider-${turnIndex}`);
+  const scrollToRequest = (requestIndex: number) => {
+    const el = document.getElementById(`request-divider-${requestIndex}`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   const allSteps = model.steps;
@@ -37,11 +37,11 @@ export function Conversation({ session, onJumpToInsights }: Props) {
   const [bulk, setBulk] = useState<Bulk>('default');
   const [overrides, setOverrides] = useState<Map<number, boolean>>(new Map());
 
-  const turnById = useMemo(() => {
-    const m = new Map<number, Turn>();
-    for (const t of session.turns) m.set(t.index, t);
+  const requestById = useMemo(() => {
+    const m = new Map<number, Request>();
+    for (const r of session.requests) m.set(r.index, r);
     return m;
-  }, [session.turns]);
+  }, [session.requests]);
 
   const visibleSteps = useMemo(() => {
     let steps = allSteps;
@@ -82,7 +82,7 @@ export function Conversation({ session, onJumpToInsights }: Props) {
   if (allSteps.length === 0) {
     return (
       <div className="p-6 text-ink-400 italic">
-        No conversation steps. The dump may not contain any turns with input or outputs yet.
+        No conversation steps. The dump may not contain any requests with input or outputs yet.
       </div>
     );
   }
@@ -129,7 +129,7 @@ export function Conversation({ session, onJumpToInsights }: Props) {
             Collapse all
           </button>
           <span className="text-xs text-ink-500 ml-auto">
-            {visibleSteps.length} of {allSteps.length} steps · {session.turns.length} turns
+            {visibleSteps.length} of {allSteps.length} steps · {session.requests.length} requests
           </span>
         </div>
         <SessionPolicyBar policy={model.policy} />
@@ -139,7 +139,7 @@ export function Conversation({ session, onJumpToInsights }: Props) {
         <SessionStory
           session={session}
           onJumpToInsights={onJumpToInsights}
-          onJumpToTurn={scrollToTurn}
+          onJumpToRequest={scrollToRequest}
           compact
         />
         <p className="text-ink-400 text-sm mb-4 max-w-3xl">
@@ -149,7 +149,7 @@ export function Conversation({ session, onJumpToInsights }: Props) {
         </p>
 
         <ol className="space-y-2 list-none">
-          {renderWithTurnDividers(visibleSteps, turnById, (step) => (
+          {renderWithRequestDividers(visibleSteps, requestById, (step) => (
             <ConversationStepView
               step={step}
               expanded={isExpanded(step)}
@@ -216,45 +216,45 @@ function SessionPolicyBar({ policy }: { policy: SessionPolicy }) {
   );
 }
 
-function renderWithTurnDividers(
+function renderWithRequestDividers(
   steps: ConversationStep[],
-  turnById: Map<number, Turn>,
+  requestById: Map<number, Request>,
   renderStep: (step: ConversationStep) => React.ReactNode,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = [];
-  let prevTurn: number | null = null;
+  let prevRequest: number | null = null;
   for (const step of steps) {
-    if (step.turnIndex !== prevTurn) {
-      const t = turnById.get(step.turnIndex);
+    if (step.requestIndex !== prevRequest) {
+      const r = requestById.get(step.requestIndex);
       out.push(
         <li
-          key={`divider-${step.stepIndex}-${step.turnIndex}`}
-          id={`turn-divider-${step.turnIndex}`}
+          key={`divider-${step.stepIndex}-${step.requestIndex}`}
+          id={`request-divider-${step.requestIndex}`}
           className="sticky top-[5.5rem] z-[5] bg-ink-950/90 backdrop-blur py-1 px-2 text-[11px] text-ink-400 border-l-2 border-accent-tool/40 flex items-center gap-3 flex-wrap scroll-mt-32"
         >
-          <span className="font-semibold text-ink-300">Turn {step.turnIndex}</span>
-          {t?.durationMs !== undefined && (
+          <span className="font-semibold text-ink-300">Request {step.requestIndex}</span>
+          {r?.durationMs !== undefined && (
             <span>
-              <span className="text-ink-500">dur</span> {fmtDurationMs(t.durationMs)}
+              <span className="text-ink-500">dur</span> {fmtDurationMs(r.durationMs)}
             </span>
           )}
-          {t?.ttfvbMs !== undefined && (
+          {r?.ttfvbMs !== undefined && (
             <span>
-              <span className="text-ink-500">ttfvb</span> {fmtDurationMs(t.ttfvbMs)}
+              <span className="text-ink-500">ttfvb</span> {fmtDurationMs(r.ttfvbMs)}
             </span>
           )}
-          {t?.usage?.total_tokens !== undefined && (
+          {r?.usage?.total_tokens !== undefined && (
             <span>
-              <span className="text-ink-500">tok</span> {fmtNumber(t.usage.total_tokens)}
-              {t.usage.input_cached_tokens !== undefined && (
-                <span className="text-ink-500"> (cached {fmtNumber(t.usage.input_cached_tokens)})</span>
+              <span className="text-ink-500">tok</span> {fmtNumber(r.usage.total_tokens)}
+              {r.usage.input_cached_tokens !== undefined && (
+                <span className="text-ink-500"> (cached {fmtNumber(r.usage.input_cached_tokens)})</span>
               )}
             </span>
           )}
-          {t?.interrupted && <span className="text-accent-err">interrupted</span>}
+          {r?.interrupted && <span className="text-accent-err">interrupted</span>}
         </li>,
       );
-      prevTurn = step.turnIndex;
+      prevRequest = step.requestIndex;
     }
     out.push(<li key={step.stepIndex}>{renderStep(step)}</li>);
   }
@@ -300,9 +300,9 @@ function ConversationStepView({
 }
 
 function StepHeaderContent({ step, expanded }: { step: ConversationStep; expanded: boolean }) {
-  const turnChip = (
+  const requestChip = (
     <span className="text-[10px] uppercase tracking-wide text-ink-500 shrink-0">
-      Turn {step.turnIndex}
+      Request {step.requestIndex}
     </span>
   );
   const caret = (
@@ -318,7 +318,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
             handshake — no input/outputs · {fmtNumber(step.toolCount)} tools · instructions{' '}
             {fmtBytes(step.instructionsChars)}
           </span>
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -329,7 +329,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
           <span className="flex-1 min-w-0 text-sm text-ink-200 truncate">
             {firstLine(step.text)}
           </span>
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -340,7 +340,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
           <span className="flex-1 min-w-0 text-xs text-ink-400 truncate">
             {fmtBytes(step.text.length)} · {firstLine(step.text)}
           </span>
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -351,7 +351,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
           <span className="flex-1 min-w-0 text-xs text-ink-400 truncate">
             {fmtBytes(step.text.length)} · {firstLine(step.text)}
           </span>
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -362,7 +362,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
           <span className="flex-1 min-w-0 text-sm text-ink-200 truncate">
             {firstLine(step.text)}
           </span>
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -375,7 +375,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
               ? `${fmtDurationMs(step.durationMs)} (encrypted)`
               : 'encrypted blob'}
           </span>
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -412,7 +412,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
             )}
           </span>
           <StatusPill status={status} wallTimeMs={wallTime} exitCode={exitCode} />
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -429,7 +429,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
             <span className="text-ink-500">×</span> {step.members.length} calls
           </span>
           <GroupStatusPills group={step} />
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -439,7 +439,7 @@ function StepHeaderContent({ step, expanded }: { step: ConversationStep; expande
         <>
           <Badge icon="❓" color="muted" label={step.typeLabel} />
           <span className="flex-1" />
-          {turnChip}
+          {requestChip}
           {caret}
         </>
       );
@@ -452,9 +452,9 @@ function StepBody({ step }: { step: ConversationStep }) {
       return (
         <div className="mt-2 text-xs text-ink-400 space-y-1">
           <p>
-            <span className="text-ink-300 font-medium">Prewarm turn:</span> codex opens the stream with an empty{' '}
+            <span className="text-ink-300 font-medium">Prewarm request:</span> codex opens the stream with an empty{' '}
             <code className="text-ink-200">input</code> and{' '}
-            <code className="text-ink-200">generate=false</code> so subsequent turns can reference it via{' '}
+            <code className="text-ink-200">generate=false</code> so subsequent requests can reference it via{' '}
             <code className="text-ink-200">previous_response_id</code>. No model output is produced; the request
             simply seeds the response-id chain and primes the prefix cache.
           </p>
@@ -507,7 +507,7 @@ function StepBody({ step }: { step: ConversationStep }) {
             <ToolBodyBlock body={step.callBody} isJson={step.callIsJson} name={step.name} />
           </div>
           <div className="text-xs text-ink-500 italic">
-            No matching output in this dump — call was the model's last emission, or the turn was interrupted
+            No matching output in this dump — call was the model's last emission, or the request was interrupted
             before the output was injected.
           </div>
         </div>
@@ -597,7 +597,7 @@ function ToolOutputPanel({ pair }: { pair: ToolPairStep }) {
     <div className={`border-l-2 ${borderCls} pl-3 ml-2`}>
       <div className={`text-[10px] uppercase tracking-wide ${headerCls} mb-1 flex items-center gap-2`}>
         <span>↩️ Output</span>
-        <span className="text-ink-600">· injected on Turn {pair.outputTurnIndex}</span>
+        <span className="text-ink-600">· injected on Request {pair.outputRequestIndex}</span>
         {pair.status === 'ok' && <span className="text-accent-recv">· exit 0</span>}
         {pair.status === 'error' && pair.exitCode !== undefined && <span>· exit {pair.exitCode}</span>}
         {pair.status === 'blocked' && <span>· rejected</span>}
