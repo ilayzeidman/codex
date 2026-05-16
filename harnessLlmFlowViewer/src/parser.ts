@@ -7,9 +7,9 @@ import {
   ReconstructedFunctionCall,
   ReconstructedMessage,
   ReconstructedReasoning,
+  Request,
   Session,
   TokenUsage,
-  Turn,
   WsEvent,
 } from './types';
 import { safeJsonParse } from './lib/format';
@@ -101,17 +101,17 @@ export async function parseDump(rawFiles: RawFile[]): Promise<Session> {
   // HTTP triplets
   const httpCalls = parseHttpTriplets(rawFiles);
 
-  // Turn segmentation: synthesize WS-like events from HTTP triplets so the
-  // same segmenter produces a Turn per HTTP request, then merge with WS.
+  // Request segmentation: synthesize WS-like events from HTTP triplets so the
+  // same segmenter produces one Request entry per HTTP roundtrip, then merge with WS.
   const httpEvents: WsEvent[] = httpCalls.flatMap(call => synthesizeEventsFromHttpCall(call));
   const allEvents = [...wsEvents, ...httpEvents].sort((a, b) => a.ts_ms - b.ts_ms);
-  const turns = segmentTurns(allEvents);
+  const requests = segmentRequests(allEvents);
 
-  const totalDurationMs = turns.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
+  const totalDurationMs = requests.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
 
   return {
     manifest,
-    turns,
+    requests,
     httpCalls,
     wsEvents,
     hasWsEvents: !!wsFile,
@@ -185,7 +185,7 @@ function parseHttpTriplets(files: RawFile[]): HttpCall[] {
 
 /**
  * Map a request/stream/response triplet onto the same event shape the WS
- * segmenter consumes, so HTTP-only dumps light up the per-turn views.
+ * segmenter consumes, so HTTP-only dumps light up the per-request views.
  * - request body becomes a synthetic `sent` `response.create`.
  * - each stream chunk's `body` is treated as a `received` model event.
  * - the unary response, if present, becomes a `received` `response.completed`.
@@ -219,11 +219,11 @@ function synthesizeEventsFromHttpCall(call: HttpCall): WsEvent[] {
   return out;
 }
 
-function segmentTurns(events: WsEvent[]): Turn[] {
-  const turns: Turn[] = [];
-  let current: Turn | null = null;
+function segmentRequests(events: WsEvent[]): Request[] {
+  const requests: Request[] = [];
+  let current: Request | null = null;
 
-  const finishTurn = (interrupted: boolean) => {
+  const finishRequest = (interrupted: boolean) => {
     if (!current) return;
     current.outputs.sort((a, b) => a.addedTs - b.addedTs);
     if (current.completed?.usage) {
@@ -238,23 +238,23 @@ function segmentTurns(events: WsEvent[]): Turn[] {
       current.durationMs = current.endTs - current.startTs;
     }
     if (interrupted) current.interrupted = true;
-    turns.push(current);
+    requests.push(current);
     current = null;
   };
 
-  // helper maps per-turn item builders
+  // helper maps per-request item builders
   let itemsById = new Map<string, OutputItem>();
 
   for (const ev of events) {
     const t = ev.body?.type as string | undefined;
-    // Start a new turn on each outbound `response.create`.
+    // Start a new request on each outbound `response.create`.
     if (ev.direction === 'sent' && t === 'response.create') {
       // close previous if still open (interrupted: no response.completed seen)
-      if (current) finishTurn(true);
+      if (current) finishRequest(true);
       current = {
-        index: turns.length + 1,
+        index: requests.length + 1,
         startTs: ev.ts_ms,
-        request: ev.body,
+        requestBody: ev.body,
         events: [ev],
         outputs: [],
         textDeltaBytes: 0,
@@ -263,14 +263,14 @@ function segmentTurns(events: WsEvent[]): Turn[] {
       continue;
     }
 
-    // Connect-frame: include as its own "turn 0" only if it stands alone
+    // Connect-frame: include as its own "request 0" only if it stands alone
     if (ev.direction === 'connect') {
       // record into nothing — viewer shows connect events separately
       continue;
     }
 
     if (!current) {
-      // received frames before any turn started: ignore for segmentation
+      // received frames before any request started: ignore for segmentation
       continue;
     }
     current.events.push(ev);
@@ -435,7 +435,7 @@ function segmentTurns(events: WsEvent[]): Turn[] {
       case 'response.completed': {
         current.endTs = ev.ts_ms;
         current.completed = ev.body.response ?? ev.body;
-        finishTurn(false);
+        finishRequest(false);
         break;
       }
 
@@ -449,8 +449,8 @@ function segmentTurns(events: WsEvent[]): Turn[] {
     }
   }
 
-  if (current) finishTurn(true);
-  return turns;
+  if (current) finishRequest(true);
+  return requests;
 }
 
 function pickUsage(u: any): TokenUsage {

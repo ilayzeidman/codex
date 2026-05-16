@@ -1,98 +1,98 @@
 import { useMemo, useState } from 'react';
-import { Session, Turn, isToolCall } from '../types';
+import { Session, Request, isToolCall } from '../types';
 import { fmtBytes, fmtDurationMs, fmtNumber, truncate } from '../lib/format';
 import { SessionStory } from './SessionStory';
 
 interface Props {
   session: Session;
-  onJumpToTurn: (index: number) => void;
+  onJumpToRequest: (index: number) => void;
   onJumpToInsights?: () => void;
 }
 
-export function Overview({ session, onJumpToTurn, onJumpToInsights }: Props) {
-  const [hoveredTurn, setHoveredTurn] = useState<number | null>(null);
-  const turns = session.turns;
-  // Anchor the timeline to the first turn's startTs — the manifest's
+export function Overview({ session, onJumpToRequest, onJumpToInsights }: Props) {
+  const [hoveredRequest, setHoveredRequest] = useState<number | null>(null);
+  const requests = session.requests;
+  // Anchor the timeline to the first request's startTs — the manifest's
   // started_at can predate the first call by several seconds (auth, connect).
-  const sessionStart = turns[0]?.startTs ?? session.manifest.started_at_unix_ms;
+  const sessionStart = requests[0]?.startTs ?? session.manifest.started_at_unix_ms;
   const sessionEnd = useMemo(() => {
     let max = sessionStart;
-    for (const t of turns) {
-      const end = t.endTs ?? t.startTs + (t.durationMs ?? 0);
+    for (const r of requests) {
+      const end = r.endTs ?? r.startTs + (r.durationMs ?? 0);
       if (end > max) max = end;
     }
     return max;
-  }, [turns, sessionStart]);
-  // Guard against degenerate dumps (1 turn / 0 duration / empty).
+  }, [requests, sessionStart]);
+  // Guard against degenerate dumps (1 request / 0 duration / empty).
   const sessionDur = Math.max(1, sessionEnd - sessionStart);
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto">
       <SessionStory
         session={session}
-        onJumpToTurn={onJumpToTurn}
+        onJumpToRequest={onJumpToRequest}
         onJumpToInsights={onJumpToInsights}
       />
 
       <Section title="Session timeline">
         <p className="text-ink-400 text-sm mb-4">
-          Each bar is one turn (a <code className="text-ink-200">response.create</code> →{' '}
+          Each bar is one request (a <code className="text-ink-200">response.create</code> →{' '}
           <code className="text-ink-200">response.completed</code> round-trip). Width is proportional to
           duration. Click to jump.
         </p>
-        {turns.length === 0 ? (
+        {requests.length === 0 ? (
           <p className="text-ink-400 italic text-sm">
-            No turns segmented. The dump may not contain any{' '}
+            No requests segmented. The dump may not contain any{' '}
             <code className="text-ink-200">response.create</code> events yet.
           </p>
         ) : (
           <div className="space-y-1.5">
-            {turns.map((t, i) => {
-              const offset = ((t.startTs - sessionStart) / sessionDur) * 100;
-              const width = Math.max(0.5, ((t.durationMs ?? 0) / sessionDur) * 100);
-              const toolCalls = t.outputs.filter(isToolCall).length;
-              const isHovered = hoveredTurn === t.index;
+            {requests.map((r, i) => {
+              const offset = ((r.startTs - sessionStart) / sessionDur) * 100;
+              const width = Math.max(0.5, ((r.durationMs ?? 0) / sessionDur) * 100);
+              const toolCalls = r.outputs.filter(isToolCall).length;
+              const isHovered = hoveredRequest === r.index;
               // Anchor the card above the row when we're in the bottom half of the list,
               // so it doesn't push past the section's bottom edge.
-              const placeAbove = turns.length > 4 && i >= turns.length - 3;
+              const placeAbove = requests.length > 4 && i >= requests.length - 3;
               return (
                 <div
-                  key={t.index}
+                  key={r.index}
                   className="relative"
-                  onMouseEnter={() => setHoveredTurn(t.index)}
-                  onMouseLeave={() => setHoveredTurn(cur => (cur === t.index ? null : cur))}
+                  onMouseEnter={() => setHoveredRequest(r.index)}
+                  onMouseLeave={() => setHoveredRequest(cur => (cur === r.index ? null : cur))}
                 >
                   <button
-                    onClick={() => onJumpToTurn(t.index)}
+                    onClick={() => onJumpToRequest(r.index)}
                     className="w-full group focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-text rounded"
                   >
                     <div className="flex items-center gap-3 text-xs">
-                      <span className="w-14 text-ink-400 text-right">Turn {t.index}</span>
+                      <span className="w-14 text-ink-400 text-right">Request {r.index}</span>
                       <div className="flex-1 relative h-7 bg-ink-900 rounded border border-ink-700 overflow-hidden">
                         <div
                           className={
                             'absolute top-0 bottom-0 transition-colors ' +
-                            (t.interrupted
+                            (r.interrupted
                               ? 'bg-gradient-to-r from-accent-err/40 to-accent-err/15 border-r border-accent-err/60 group-hover:from-accent-err/60 group-hover:to-accent-err/25'
                               : 'bg-gradient-to-r from-accent-text/40 to-accent-text/15 border-r border-accent-text/60 group-hover:from-accent-text/60 group-hover:to-accent-text/25')
                           }
                           style={{ left: `${offset}%`, width: `${width}%` }}
                         />
                         <span className="absolute inset-0 flex items-center px-2 pointer-events-none font-mono text-ink-300">
-                          {fmtDurationMs(t.durationMs)}
-                          {t.interrupted && <span className="ml-3 text-accent-err">interrupted</span>}
+                          {fmtDurationMs(r.durationMs)}
+                          {r.interrupted && <span className="ml-3 text-accent-err">interrupted</span>}
                           {toolCalls > 0 && <span className="ml-3 text-accent-tool">🛠 {toolCalls}</span>}
-                          {t.outputs.some(o => o.kind === 'message' && o.text.length > 0) && (
+                          {r.outputs.some(o => o.kind === 'message' && o.text.length > 0) && (
                             <span className="ml-3 text-accent-text">💬</span>
                           )}
-                          {t.usage?.total_tokens !== undefined && (
-                            <span className="ml-3 text-ink-500">{t.usage.total_tokens.toLocaleString()} tok</span>
+                          {r.usage?.total_tokens !== undefined && (
+                            <span className="ml-3 text-ink-500">{r.usage.total_tokens.toLocaleString()} tok</span>
                           )}
                         </span>
                       </div>
                     </div>
                   </button>
-                  {isHovered && <TurnHoverCard turn={t} placeAbove={placeAbove} />}
+                  {isHovered && <RequestHoverCard request={r} placeAbove={placeAbove} />}
                 </div>
               );
             })}
@@ -103,7 +103,9 @@ export function Overview({ session, onJumpToTurn, onJumpToInsights }: Props) {
       <Section title="What you're looking at">
         <div className="text-ink-300 text-sm space-y-2 max-w-3xl">
           <p>
-            Codex makes one LLM call per turn. Each turn:
+            Each request below is one HTTP sampling round-trip with the model. A codex-core "turn"
+            (one user submission) can span multiple of these requests — see{' '}
+            <code className="text-ink-200">wiki/operations/turn-loop.md</code>.
           </p>
           <ol className="list-decimal pl-5 space-y-1">
             <li>
@@ -130,9 +132,9 @@ export function Overview({ session, onJumpToTurn, onJumpToInsights }: Props) {
             </li>
           </ol>
           <p className="text-ink-400">
-            If a turn contains function_call output items, codex executes the tools locally and feeds
+            If a request contains function_call output items, codex executes the tools locally and feeds
             their outputs back as <code className="text-ink-200">function_call_output</code> input
-            items on the <em>next</em> turn — that's why the next turn's input list grows.
+            items on the <em>next</em> request — that's why the next request's input list grows.
           </p>
         </div>
       </Section>
@@ -160,12 +162,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function TurnHoverCard({ turn, placeAbove }: { turn: Turn; placeAbove: boolean }) {
-  const toolCalls = turn.outputs.filter(isToolCall);
-  const messages = turn.outputs.filter(o => o.kind === 'message' && o.text.length > 0);
-  const reasoningCount = turn.outputs.filter(o => o.kind === 'reasoning').length;
-  // Pull the last user-supplied input from the request payload (the prompt for this turn).
-  const req = turn.request as any;
+function RequestHoverCard({ request, placeAbove }: { request: Request; placeAbove: boolean }) {
+  const toolCalls = request.outputs.filter(isToolCall);
+  const messages = request.outputs.filter(o => o.kind === 'message' && o.text.length > 0);
+  const reasoningCount = request.outputs.filter(o => o.kind === 'reasoning').length;
+  // Pull the last user-supplied input from the request payload (the prompt for this request).
+  const req = request.requestBody as any;
   const inputs: any[] = Array.isArray(req?.input) ? req.input : [];
   const lastUserMessage = (() => {
     for (let i = inputs.length - 1; i >= 0; i--) {
@@ -190,28 +192,28 @@ function TurnHoverCard({ turn, placeAbove }: { turn: Turn; placeAbove: boolean }
     >
       <div className="bg-ink-950 border border-ink-700 rounded-lg shadow-2xl p-3 text-xs space-y-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ink-300">
-          <span className="font-semibold text-ink-100">Turn {turn.index}</span>
+          <span className="font-semibold text-ink-100">Request {request.index}</span>
           <span className="text-ink-500">·</span>
           <span>
-            <span className="text-ink-500">duration</span> {fmtDurationMs(turn.durationMs)}
+            <span className="text-ink-500">duration</span> {fmtDurationMs(request.durationMs)}
           </span>
-          {turn.ttftMs !== undefined && (
+          {request.ttftMs !== undefined && (
             <span>
-              <span className="text-ink-500">ttft</span> {fmtDurationMs(turn.ttftMs)}
+              <span className="text-ink-500">ttft</span> {fmtDurationMs(request.ttftMs)}
             </span>
           )}
-          {turn.ttfvbMs !== undefined && turn.ttfvbMs !== turn.ttftMs && (
+          {request.ttfvbMs !== undefined && request.ttfvbMs !== request.ttftMs && (
             <span>
-              <span className="text-ink-500">ttfvb</span> {fmtDurationMs(turn.ttfvbMs)}
+              <span className="text-ink-500">ttfvb</span> {fmtDurationMs(request.ttfvbMs)}
             </span>
           )}
-          {turn.usage?.total_tokens !== undefined && (
+          {request.usage?.total_tokens !== undefined && (
             <span>
-              <span className="text-ink-500">tokens</span> {fmtNumber(turn.usage.total_tokens)}
-              {turn.usage.input_cached_tokens !== undefined && (
+              <span className="text-ink-500">tokens</span> {fmtNumber(request.usage.total_tokens)}
+              {request.usage.input_cached_tokens !== undefined && (
                 <span className="text-ink-500">
                   {' '}
-                  (cached {fmtNumber(turn.usage.input_cached_tokens)})
+                  (cached {fmtNumber(request.usage.input_cached_tokens)})
                 </span>
               )}
             </span>
@@ -221,7 +223,7 @@ function TurnHoverCard({ turn, placeAbove }: { turn: Turn; placeAbove: boolean }
               <span className="text-ink-500">reasoning</span> 🧠 {reasoningCount}
             </span>
           )}
-          {turn.interrupted && <span className="text-accent-err">interrupted</span>}
+          {request.interrupted && <span className="text-accent-err">interrupted</span>}
         </div>
 
         {lastUserMessage && (
@@ -290,7 +292,7 @@ function TurnHoverCard({ turn, placeAbove }: { turn: Turn; placeAbove: boolean }
         )}
 
         {toolCalls.length === 0 && messages.length === 0 && (
-          <div className="italic text-ink-500">No tool calls or messages on this turn.</div>
+          <div className="italic text-ink-500">No tool calls or messages on this request.</div>
         )}
       </div>
     </div>

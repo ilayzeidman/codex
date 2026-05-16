@@ -1,9 +1,9 @@
-import { Session, Turn, isToolCall } from '../types';
+import { Session, Request, isToolCall } from '../types';
 import { fmtDurationMs } from '../lib/format';
 
 type View =
   | { kind: 'overview' }
-  | { kind: 'turn'; index: number }
+  | { kind: 'request'; index: number }
   | { kind: 'conversation' }
   | { kind: 'insights' }
   | { kind: 'raw' };
@@ -14,7 +14,7 @@ interface Props {
   onSelect: (v: View) => void;
 }
 
-export function TurnList({ session, view, onSelect }: Props) {
+export function RequestList({ session, view, onSelect }: Props) {
   return (
     <nav className="bg-ink-900 border-r border-ink-700 overflow-y-auto">
       <div className="px-3 py-3 sticky top-0 bg-ink-900 border-b border-ink-700 z-10">
@@ -48,16 +48,16 @@ export function TurnList({ session, view, onSelect }: Props) {
       </ul>
 
       <div className="px-3 py-2 mt-2 text-[11px] uppercase tracking-wide text-ink-400 border-t border-ink-800">
-        Turns ({session.turns.length})
+        Requests ({session.requests.length})
       </div>
 
       <ul className="px-2 pb-6 space-y-1">
-        {session.turns.map(t => (
-          <TurnRow
-            key={t.index}
-            turn={t}
-            active={view.kind === 'turn' && view.index === t.index}
-            onClick={() => onSelect({ kind: 'turn', index: t.index })}
+        {session.requests.map(r => (
+          <RequestRow
+            key={r.index}
+            request={r}
+            active={view.kind === 'request' && view.index === r.index}
+            onClick={() => onSelect({ kind: 'request', index: r.index })}
           />
         ))}
       </ul>
@@ -92,17 +92,17 @@ function Row({
   );
 }
 
-function TurnRow({
-  turn,
+function RequestRow({
+  request,
   active,
   onClick,
 }: {
-  turn: Turn;
+  request: Request;
   active: boolean;
   onClick: () => void;
 }) {
-  const toolCalls = turn.outputs.filter(isToolCall).length;
-  const hasMessage = turn.outputs.some(o => o.kind === 'message' && o.text.length > 0);
+  const toolCalls = request.outputs.filter(isToolCall).length;
+  const hasMessage = request.outputs.some(o => o.kind === 'message' && o.text.length > 0);
   return (
     <li>
       <button
@@ -113,8 +113,8 @@ function TurnRow({
         }
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-sm">Turn {turn.index}</span>
-          <span className="text-[10px] text-ink-400">{fmtDurationMs(turn.durationMs)}</span>
+          <span className="font-medium text-sm">Request {request.index}</span>
+          <span className="text-[10px] text-ink-400">{fmtDurationMs(request.durationMs)}</span>
         </div>
         <div className="mt-1 flex items-center gap-1.5 text-[10px]">
           {toolCalls > 0 && (
@@ -127,8 +127,8 @@ function TurnRow({
               💬 msg
             </span>
           )}
-          {turn.usage?.total_tokens !== undefined && (
-            <span className="text-ink-500">{turn.usage.total_tokens.toLocaleString()} tok</span>
+          {request.usage?.total_tokens !== undefined && (
+            <span className="text-ink-500">{request.usage.total_tokens.toLocaleString()} tok</span>
           )}
         </div>
       </button>

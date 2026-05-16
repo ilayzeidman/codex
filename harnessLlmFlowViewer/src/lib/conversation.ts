@@ -1,4 +1,4 @@
-import { Session, OutputItem, Turn, isToolCall } from '../types';
+import { Session, OutputItem, Request, isToolCall } from '../types';
 
 export type ConversationStep =
   | PrewarmStep
@@ -14,7 +14,7 @@ export type ConversationStep =
 
 interface StepBase {
   stepIndex: number;
-  turnIndex: number;
+  requestIndex: number;
 }
 
 export interface PrewarmStep extends StepBase {
@@ -70,7 +70,7 @@ export interface ToolPairStep extends StepBase {
   callBody: string;
   callIsJson: boolean;
   outputBody: string;
-  outputTurnIndex: number;
+  outputRequestIndex: number;
   status: ToolStatus;
   exitCode?: number;
   wallTimeMs?: number;
@@ -117,59 +117,59 @@ export interface ConversationModel {
   failureCount: number;
 }
 
-/** Build a single linear narrative across all turns.
+/** Build a single linear narrative across all requests.
  *
- *  Codex chains turns via the Responses API's `previous_response_id` — each
- *  turn's `request.input` carries only what is NEW since the prior response
- *  (the user prompt on turn 2, tool outputs on subsequent turns). The full
- *  conversation is therefore the concatenation, in turn order, of every
- *  turn's `request.input` followed by that turn's `outputs`.
+ *  Codex chains requests via the Responses API's `previous_response_id` — each
+ *  request's `requestBody.input` carries only what is NEW since the prior response
+ *  (the user prompt on request 2, tool outputs on subsequent requests). The full
+ *  conversation is therefore the concatenation, in request order, of every
+ *  request's `requestBody.input` followed by that request's `outputs`.
  *
  *  Tool call ↔ tool output pairing matches `call_id` across the rope so
- *  parallel tool calls (one turn emits N calls, next turn injects N outputs
+ *  parallel tool calls (one request emits N calls, next request injects N outputs
  *  in their own order) pair correctly. */
 export function buildConversationModel(session: Session): ConversationModel {
-  const turns = session.turns;
-  if (turns.length === 0) return { steps: [], policy: {}, failureCount: 0 };
+  const requests = session.requests;
+  if (requests.length === 0) return { steps: [], policy: {}, failureCount: 0 };
 
-  // call_id → originating turn index for echoed-back tool calls.
-  const callIdToTurn = new Map<string, number>();
-  // IDs that originated as outputs in some prior turn. When the harness
+  // call_id → originating request index for echoed-back tool calls.
+  const callIdToRequest = new Map<string, number>();
+  // IDs that originated as outputs in some prior request. When the harness
   // resumes a session after an interrupt, codex re-injects the entire prior
-  // conversation as the next turn's `input` — including function_calls,
+  // conversation as the next request's `input` — including function_calls,
   // assistant messages, and reasoning items that were originally outputs.
   // We use these sets to recognise replays and skip them, otherwise the
   // conversation pane shows every step twice.
   const outputCallIds = new Set<string>();
-  for (const turn of turns) {
-    for (const out of turn.outputs) {
-      if (isToolCall(out) && out.callId && !callIdToTurn.has(out.callId)) {
-        callIdToTurn.set(out.callId, turn.index);
+  for (const request of requests) {
+    for (const out of request.outputs) {
+      if (isToolCall(out) && out.callId && !callIdToRequest.has(out.callId)) {
+        callIdToRequest.set(out.callId, request.index);
       }
       if (isToolCall(out) && out.callId) outputCallIds.add(out.callId);
     }
   }
 
-  // The rope: every turn's input items + outputs, in turn order. Prewarm
-  // turns (empty input AND empty outputs) are inserted as a synthetic step
-  // so users see them rather than wonder why "Turn 1" silently disappears.
-  type Entry = { source: 'input' | 'output' | 'prewarm'; turnIndex: number; raw: any };
+  // The rope: every request's input items + outputs, in request order. Prewarm
+  // requests (empty input AND empty outputs) are inserted as a synthetic step
+  // so users see them rather than wonder why "Request 1" silently disappears.
+  type Entry = { source: 'input' | 'output' | 'prewarm'; requestIndex: number; raw: any };
   const rope: Entry[] = [];
   // Track which function_call_output call_ids we've already injected so a
-  // duplicate replayed by a later turn's input doesn't add a phantom row.
+  // duplicate replayed by a later request's input doesn't add a phantom row.
   const seenOutputCallIds = new Set<string>();
-  for (const turn of turns) {
-    const inputs: any[] = Array.isArray(turn.request?.input) ? turn.request.input : [];
-    if (inputs.length === 0 && turn.outputs.length === 0) {
-      rope.push({ source: 'prewarm', turnIndex: turn.index, raw: turn });
+  for (const request of requests) {
+    const inputs: any[] = Array.isArray(request.requestBody?.input) ? request.requestBody.input : [];
+    if (inputs.length === 0 && request.outputs.length === 0) {
+      rope.push({ source: 'prewarm', requestIndex: request.index, raw: request });
       continue;
     }
     for (const it of inputs) {
       if (isResumeReplay(it, outputCallIds, seenOutputCallIds)) continue;
-      rope.push({ source: 'input', turnIndex: turn.index, raw: it });
+      rope.push({ source: 'input', requestIndex: request.index, raw: it });
       if (isOutputType(it) && it?.call_id) seenOutputCallIds.add(it.call_id);
     }
-    for (const out of turn.outputs) rope.push({ source: 'output', turnIndex: turn.index, raw: out });
+    for (const out of request.outputs) rope.push({ source: 'output', requestIndex: request.index, raw: out });
   }
 
   // Pre-index tool outputs by call_id so a tool call can claim its match
@@ -194,16 +194,16 @@ export function buildConversationModel(session: Session): ConversationModel {
     const item = entry.raw;
 
     if (entry.source === 'prewarm') {
-      const turn = item as Turn;
+      const request = item as Request;
       raw.push({
         stepIndex: raw.length + 1,
-        turnIndex: turn.index,
+        requestIndex: request.index,
         kind: 'prewarm',
-        toolCount: Array.isArray(turn.request?.tools) ? turn.request.tools.length : 0,
-        instructionsChars: typeof turn.request?.instructions === 'string'
-          ? turn.request.instructions.length
+        toolCount: Array.isArray(request.requestBody?.tools) ? request.requestBody.tools.length : 0,
+        instructionsChars: typeof request.requestBody?.instructions === 'string'
+          ? request.requestBody.instructions.length
           : 0,
-        totalTokens: turn.usage?.total_tokens,
+        totalTokens: request.usage?.total_tokens,
       });
       continue;
     }
@@ -221,7 +221,7 @@ export function buildConversationModel(session: Session): ConversationModel {
         const { status, exitCode, wallTimeMs, failureReason } = classifyOutput(outputBody, item.name);
         raw.push({
           stepIndex: raw.length + 1,
-          turnIndex: entry.turnIndex,
+          requestIndex: entry.requestIndex,
           kind: 'tool_pair',
           toolKind,
           name: item.name,
@@ -229,7 +229,7 @@ export function buildConversationModel(session: Session): ConversationModel {
           callBody: String(callBody),
           callIsJson: toolKind === 'function_call',
           outputBody,
-          outputTurnIndex: outEntry.turnIndex,
+          outputRequestIndex: outEntry.requestIndex,
           status,
           exitCode,
           wallTimeMs,
@@ -240,7 +240,7 @@ export function buildConversationModel(session: Session): ConversationModel {
       }
     }
 
-    raw.push(toSingleStep(item, entry.source, entry.turnIndex, callIdToTurn, raw.length + 1));
+    raw.push(toSingleStep(item, entry.source, entry.requestIndex, callIdToRequest, raw.length + 1));
   }
 
   const grouped = groupAdjacentToolCalls(raw);
@@ -267,11 +267,11 @@ function isOutputType(it: any): boolean {
   return it?.type === 'function_call_output' || it?.type === 'custom_tool_call_output';
 }
 
-/** When codex resumes a session after an interrupt, the next turn's `input`
+/** When codex resumes a session after an interrupt, the next request's `input`
  *  carries the entire prior conversation as a sequence of replayed items —
  *  function_calls the model previously emitted, the assistant messages it
  *  streamed, and its encrypted reasoning blobs. These all already appear in
- *  earlier turns' `outputs`, so showing them again clutters the conversation
+ *  earlier requests' `outputs`, so showing them again clutters the conversation
  *  flow with phantom "awaiting output" rows. Detect them here. */
 function isResumeReplay(
   it: any,
@@ -283,7 +283,7 @@ function isResumeReplay(
   if (it.type === 'function_call' || it.type === 'custom_tool_call') {
     return Boolean(it.call_id && outputCallIds.has(it.call_id));
   }
-  // function_call_output appears once normally (in the turn after the call).
+  // function_call_output appears once normally (in the request after the call).
   // If we've already injected one for this call_id, the duplicate is a replay.
   if (isOutputType(it)) {
     return Boolean(it.call_id && seenOutputCallIds.has(it.call_id));
@@ -383,9 +383,9 @@ function groupAdjacentToolCalls(steps: ConversationStep[]): ConversationStep[] {
       const next = steps[j];
       if (next.kind !== 'tool_pair') break;
       if (next.name !== cur.name) break;
-      // Group across one-turn-apart pairs too (parallel tool calls span N+1's
-      // input fold). Same turn or adjacent: collapse.
-      if (Math.abs(next.turnIndex - cur.turnIndex) > 1) break;
+      // Group across one-request-apart pairs too (parallel tool calls span N+1's
+      // input fold). Same request or adjacent: collapse.
+      if (Math.abs(next.requestIndex - cur.requestIndex) > 1) break;
       j++;
     }
     if (j - i >= 2) {
@@ -395,7 +395,7 @@ function groupAdjacentToolCalls(steps: ConversationStep[]): ConversationStep[] {
       const blockedCount = members.filter(m => m.status === 'blocked').length;
       out.push({
         stepIndex: cur.stepIndex,
-        turnIndex: cur.turnIndex,
+        requestIndex: cur.requestIndex,
         kind: 'tool_group',
         name: cur.name,
         toolKind: cur.toolKind,
@@ -461,24 +461,24 @@ function classifyUserMessage(text: string): { kind: 'user_context'; label: strin
 function toSingleStep(
   item: any,
   source: 'input' | 'output' | 'prewarm',
-  turnIndex: number,
-  callIdToTurn: Map<string, number>,
+  requestIndex: number,
+  callIdToRequest: Map<string, number>,
   stepIndex: number,
 ): ConversationStep {
   if (source === 'output') {
     const out = item as OutputItem;
     if (out.kind === 'message') {
-      return { stepIndex, turnIndex, kind: 'assistant_message', text: out.text, raw: out };
+      return { stepIndex, requestIndex, kind: 'assistant_message', text: out.text, raw: out };
     }
     if (out.kind === 'reasoning') {
       const duration = out.doneTs !== undefined ? out.doneTs - out.addedTs : undefined;
-      return { stepIndex, turnIndex, kind: 'reasoning', durationMs: duration, raw: out };
+      return { stepIndex, requestIndex, kind: 'reasoning', durationMs: duration, raw: out };
     }
     if (out.kind === 'function_call' || out.kind === 'custom_tool_call') {
       const callBody = out.kind === 'function_call' ? out.argsJson : out.input;
       return {
         stepIndex,
-        turnIndex,
+        requestIndex,
         kind: 'tool_call_unpaired',
         toolKind: out.kind,
         name: out.name,
@@ -487,7 +487,7 @@ function toSingleStep(
         callIsJson: out.kind === 'function_call',
       };
     }
-    return { stepIndex, turnIndex, kind: 'unknown', typeLabel: (out as any).kind ?? 'unknown', raw: out };
+    return { stepIndex, requestIndex, kind: 'unknown', typeLabel: (out as any).kind ?? 'unknown', raw: out };
   }
 
   // source === 'input'
@@ -497,27 +497,27 @@ function toSingleStep(
     if (role === 'user') {
       const c = classifyUserMessage(text);
       if (c.kind === 'user_context') {
-        return { stepIndex, turnIndex, kind: 'user_context', label: c.label, text, raw: item };
+        return { stepIndex, requestIndex, kind: 'user_context', label: c.label, text, raw: item };
       }
-      return { stepIndex, turnIndex, kind: 'user_message', text, raw: item };
+      return { stepIndex, requestIndex, kind: 'user_message', text, raw: item };
     }
     if (role === 'developer' || role === 'system') {
-      return { stepIndex, turnIndex, kind: 'developer_message', text, raw: item };
+      return { stepIndex, requestIndex, kind: 'developer_message', text, raw: item };
     }
-    return { stepIndex, turnIndex, kind: 'assistant_message', text, raw: item };
+    return { stepIndex, requestIndex, kind: 'assistant_message', text, raw: item };
   }
   if (item?.type === 'reasoning') {
-    return { stepIndex, turnIndex, kind: 'reasoning', raw: item };
+    return { stepIndex, requestIndex, kind: 'reasoning', raw: item };
   }
   if (item?.type === 'function_call' || item?.type === 'custom_tool_call') {
     const toolKind: 'function_call' | 'custom_tool_call' = item.type;
     const callBody = toolKind === 'function_call'
       ? String(item.arguments ?? '')
       : String(item.input ?? '');
-    const callTurn = item.call_id ? (callIdToTurn.get(item.call_id) ?? turnIndex) : turnIndex;
+    const callRequest = item.call_id ? (callIdToRequest.get(item.call_id) ?? requestIndex) : requestIndex;
     return {
       stepIndex,
-      turnIndex: callTurn,
+      requestIndex: callRequest,
       kind: 'tool_call_unpaired',
       toolKind,
       name: String(item.name ?? '<unnamed>'),
@@ -527,9 +527,9 @@ function toSingleStep(
     };
   }
   if (item?.type === 'function_call_output' || item?.type === 'custom_tool_call_output') {
-    return { stepIndex, turnIndex, kind: 'unknown', typeLabel: item.type, raw: item };
+    return { stepIndex, requestIndex, kind: 'unknown', typeLabel: item.type, raw: item };
   }
-  return { stepIndex, turnIndex, kind: 'unknown', typeLabel: String(item?.type ?? 'item'), raw: item };
+  return { stepIndex, requestIndex, kind: 'unknown', typeLabel: String(item?.type ?? 'item'), raw: item };
 }
 
 /** Pretty-render a tool name with namespace separators. Handles:

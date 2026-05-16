@@ -1,12 +1,12 @@
-import { Session, Turn, isToolCall } from '../types';
+import { Session, Request, isToolCall } from '../types';
 import { buildConversationModel, ConversationStep, ToolPairStep } from './conversation';
 
-/** Per-turn slice of where wall-clock time actually went.
- *  Wire events give us three useful boundaries inside a turn:
+/** Per-request slice of where wall-clock time actually went.
+ *  Wire events give us three useful boundaries inside a request:
  *    startTs (response.create sent) → first reasoning item → first visible byte → endTs
  *  Treat reasoning-only stretches as "thinking" and the rest as streaming.
- *  Tool exec time lives BETWEEN turns, so it's tracked at the session level. */
-export interface TurnTimeBreakdown {
+ *  Tool exec time lives BETWEEN requests, so it's tracked at the session level. */
+export interface RequestTimeBreakdown {
   index: number;
   totalMs: number;
   /** Time until first output item — usually reasoning placeholder. */
@@ -24,7 +24,7 @@ export interface RepeatCommandGroup {
   displayLine: string;
   /** Per-occurrence rich detail in chronological order. */
   occurrences: Array<{
-    turnIndex: number;
+    requestIndex: number;
     fullCommand: string;
     status?: 'ok' | 'error' | 'blocked' | 'unknown';
     exitCode?: number;
@@ -37,8 +37,8 @@ export interface FailureCluster {
   /** Tone for badge coloring. */
   tone: 'err' | 'warn';
   count: number;
-  /** Sample turn indices (deduped, up to a few) to jump from the row. */
-  sampleTurns: number[];
+  /** Sample request indices (deduped, up to a few) to jump from the row. */
+  sampleRequests: number[];
   /** A representative failure message line. */
   sampleMessage?: string;
 }
@@ -47,18 +47,18 @@ export interface SessionInsights {
   /** End-to-end real time: last event ts − first event ts. Includes idle gaps
    *  when the user wasn't waiting on the model (local tool exec, harness work). */
   wallClockMs: number;
-  /** Sum of per-turn API durations — what the LLM was actively "busy" for. */
+  /** Sum of per-request API durations — what the LLM was actively "busy" for. */
   activeApiMs: number;
-  /** wallClockMs − activeApiMs. Time spent outside model turns (local tool
-   *  execution, idle between turns, sandbox approvals). */
+  /** wallClockMs − activeApiMs. Time spent outside model requests (local tool
+   *  execution, idle between requests, sandbox approvals). */
   outOfApiMs: number;
 
   /** First human-typed user prompt (skipping AGENTS.md / environment_context). */
   userPrompt?: string;
-  userPromptTurn?: number;
+  userPromptRequest?: number;
   /** Last assistant message body — usually the "done" summary. */
   finalAssistantMessage?: string;
-  finalAssistantTurn?: number;
+  finalAssistantRequest?: number;
 
   /** Failures grouped by surface (timeout / exit / blocked / patch reject). */
   failureClusters: FailureCluster[];
@@ -69,28 +69,30 @@ export interface SessionInsights {
   /** Sum of redundant runs (occurrences − 1 across all groups). */
   wastedCallCount: number;
 
-  /** Turn-by-turn split of where wall-clock time inside the API went. */
-  turnBreakdown: TurnTimeBreakdown[];
-  /** Sum of reasoning time across turns (silent wire while CoT generates). */
+  /** Per-request split of where wall-clock time inside the API went. */
+  requestBreakdown: RequestTimeBreakdown[];
+  /** Sum of reasoning time across requests (silent wire while CoT generates). */
   totalReasoningMs: number;
   /** Sum of streaming visible-byte time. */
   totalStreamingMs: number;
 
-  /** Input tokens on the first non-prewarm turn vs the last turn — context bloat. */
-  inputTokensFirstTurn?: number;
-  inputTokensLastTurn?: number;
+  /** Input tokens on the first non-prewarm request vs the last request — context bloat. */
+  inputTokensFirstRequest?: number;
+  inputTokensLastRequest?: number;
 }
 
 export function computeSessionInsights(session: Session): SessionInsights {
-  const turns = session.turns;
+  const requests = session.requests;
   const wsEvents = session.wsEvents;
 
-  const firstTs = wsEvents[0]?.ts_ms ?? turns[0]?.startTs ?? session.manifest.started_at_unix_ms;
+  const firstTs = wsEvents[0]?.ts_ms ?? requests[0]?.startTs ?? session.manifest.started_at_unix_ms;
   const lastEvent = wsEvents[wsEvents.length - 1];
   const lastTs =
     lastEvent?.ts_ms ??
-    turns[turns.length - 1]?.endTs ??
-    (turns[turns.length - 1] ? turns[turns.length - 1].startTs + (turns[turns.length - 1].durationMs ?? 0) : firstTs);
+    requests[requests.length - 1]?.endTs ??
+    (requests[requests.length - 1]
+      ? requests[requests.length - 1].startTs + (requests[requests.length - 1].durationMs ?? 0)
+      : firstTs);
   const wallClockMs = Math.max(0, lastTs - firstTs);
   const activeApiMs = session.totalDurationMs;
   const outOfApiMs = Math.max(0, wallClockMs - activeApiMs);
@@ -99,40 +101,40 @@ export function computeSessionInsights(session: Session): SessionInsights {
   const steps = model.steps;
 
   let userPrompt: string | undefined;
-  let userPromptTurn: number | undefined;
+  let userPromptRequest: number | undefined;
   let finalAssistantMessage: string | undefined;
-  let finalAssistantTurn: number | undefined;
+  let finalAssistantRequest: number | undefined;
   for (const s of steps) {
     if (s.kind === 'user_message' && !userPrompt) {
       userPrompt = s.text;
-      userPromptTurn = s.turnIndex;
+      userPromptRequest = s.requestIndex;
     }
     if (s.kind === 'assistant_message') {
       finalAssistantMessage = s.text;
-      finalAssistantTurn = s.turnIndex;
+      finalAssistantRequest = s.requestIndex;
     }
   }
 
-  const turnBreakdown = computeTurnBreakdowns(turns);
-  const totalReasoningMs = turnBreakdown.reduce((s, b) => s + b.reasoningMs, 0);
-  const totalStreamingMs = turnBreakdown.reduce((s, b) => s + b.streamingMs, 0);
+  const requestBreakdown = computeRequestBreakdowns(requests);
+  const totalReasoningMs = requestBreakdown.reduce((s, b) => s + b.reasoningMs, 0);
+  const totalStreamingMs = requestBreakdown.reduce((s, b) => s + b.streamingMs, 0);
 
   const { failureClusters, totalFailures } = clusterFailures(steps);
   const { repeats, wastedCallCount } = detectRepeats(steps);
 
-  // First turn with actual input items (skip a possible prewarm), last turn.
-  let inputTokensFirstTurn: number | undefined;
-  let inputTokensLastTurn: number | undefined;
-  for (const t of turns) {
-    const hasInput = Array.isArray(t.request?.input) && t.request.input.length > 0;
-    if (hasInput && t.usage?.input_tokens !== undefined) {
-      inputTokensFirstTurn = t.usage.input_tokens;
+  // First request with actual input items (skip a possible prewarm), last request.
+  let inputTokensFirstRequest: number | undefined;
+  let inputTokensLastRequest: number | undefined;
+  for (const r of requests) {
+    const hasInput = Array.isArray(r.requestBody?.input) && r.requestBody.input.length > 0;
+    if (hasInput && r.usage?.input_tokens !== undefined) {
+      inputTokensFirstRequest = r.usage.input_tokens;
       break;
     }
   }
-  for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].usage?.input_tokens !== undefined) {
-      inputTokensLastTurn = turns[i].usage!.input_tokens;
+  for (let i = requests.length - 1; i >= 0; i--) {
+    if (requests[i].usage?.input_tokens !== undefined) {
+      inputTokensLastRequest = requests[i].usage!.input_tokens;
       break;
     }
   }
@@ -142,32 +144,32 @@ export function computeSessionInsights(session: Session): SessionInsights {
     activeApiMs,
     outOfApiMs,
     userPrompt,
-    userPromptTurn,
+    userPromptRequest,
     finalAssistantMessage,
-    finalAssistantTurn,
+    finalAssistantRequest,
     failureClusters,
     totalFailures,
     repeats,
     wastedCallCount,
-    turnBreakdown,
+    requestBreakdown,
     totalReasoningMs,
     totalStreamingMs,
-    inputTokensFirstTurn,
-    inputTokensLastTurn,
+    inputTokensFirstRequest,
+    inputTokensLastRequest,
   };
 }
 
-function computeTurnBreakdowns(turns: Turn[]): TurnTimeBreakdown[] {
-  return turns.map(t => {
-    const total = t.durationMs ?? 0;
+function computeRequestBreakdowns(requests: Request[]): RequestTimeBreakdown[] {
+  return requests.map(r => {
+    const total = r.durationMs ?? 0;
     // ttftMs = time to first output_item.added (often a reasoning placeholder).
     // ttfvbMs = time to first visible byte (text / args / patch delta).
-    const pre = t.ttftMs ?? 0;
-    const visible = t.ttfvbMs ?? t.ttftMs ?? 0;
+    const pre = r.ttftMs ?? 0;
+    const visible = r.ttfvbMs ?? r.ttftMs ?? 0;
     const reasoning = Math.max(0, visible - pre);
     const streaming = Math.max(0, total - visible);
     return {
-      index: t.index,
+      index: r.index,
       totalMs: total,
       preReasoningMs: Math.min(pre, total),
       reasoningMs: Math.min(reasoning, total),
@@ -180,41 +182,41 @@ function clusterFailures(steps: ConversationStep[]): {
   failureClusters: FailureCluster[];
   totalFailures: number;
 } {
-  type Bucket = { label: string; tone: 'err' | 'warn'; turns: number[]; sample?: string };
+  type Bucket = { label: string; tone: 'err' | 'warn'; requests: number[]; sample?: string };
   const buckets = new Map<string, Bucket>();
   let total = 0;
 
-  const add = (key: string, label: string, tone: 'err' | 'warn', turn: number, sample?: string) => {
+  const add = (key: string, label: string, tone: 'err' | 'warn', request: number, sample?: string) => {
     total += 1;
     let b = buckets.get(key);
     if (!b) {
-      b = { label, tone, turns: [], sample };
+      b = { label, tone, requests: [], sample };
       buckets.set(key, b);
     }
-    b.turns.push(turn);
+    b.requests.push(request);
     if (!b.sample && sample) b.sample = sample;
   };
 
   const handlePair = (p: ToolPairStep) => {
     if (p.status === 'blocked') {
-      add('blocked', 'blocked by sandbox', 'warn', p.turnIndex, p.failureReason);
+      add('blocked', 'blocked by sandbox', 'warn', p.requestIndex, p.failureReason);
       return;
     }
     if (p.status !== 'error') return;
     if (/timed?\s*out|timeout/i.test(p.failureReason ?? '') || p.exitCode === 124) {
-      add('timeout', 'tool timeout', 'err', p.turnIndex, p.failureReason);
+      add('timeout', 'tool timeout', 'err', p.requestIndex, p.failureReason);
       return;
     }
     if (p.name === 'apply_patch') {
-      add('patch-failed', 'apply_patch failed', 'err', p.turnIndex, p.failureReason);
+      add('patch-failed', 'apply_patch failed', 'err', p.requestIndex, p.failureReason);
       return;
     }
     if (p.exitCode !== undefined) {
       const key = `exit:${p.exitCode}`;
-      add(key, `exit ${p.exitCode}`, 'err', p.turnIndex, p.failureReason);
+      add(key, `exit ${p.exitCode}`, 'err', p.requestIndex, p.failureReason);
       return;
     }
-    add('error', 'tool error', 'err', p.turnIndex, p.failureReason);
+    add('error', 'tool error', 'err', p.requestIndex, p.failureReason);
   };
 
   for (const s of steps) {
@@ -228,8 +230,8 @@ function clusterFailures(steps: ConversationStep[]): {
     .map(b => ({
       label: b.label,
       tone: b.tone,
-      count: b.turns.length,
-      sampleTurns: dedupe(b.turns).slice(0, 6),
+      count: b.requests.length,
+      sampleRequests: dedupe(b.requests).slice(0, 6),
       sampleMessage: b.sample,
     }))
     .sort((a, b) => b.count - a.count);
@@ -250,7 +252,7 @@ function detectRepeats(steps: ConversationStep[]): {
     occs.push({
       signature,
       displayLine,
-      turnIndex: p.turnIndex,
+      requestIndex: p.requestIndex,
       fullCommand: p.callBody,
       status: p.status,
       exitCode: p.exitCode,
@@ -276,7 +278,7 @@ function detectRepeats(steps: ConversationStep[]): {
       groups.set(o.signature, g);
     }
     g.occurrences.push({
-      turnIndex: o.turnIndex,
+      requestIndex: o.requestIndex,
       fullCommand: o.fullCommand,
       status: o.status,
       exitCode: o.exitCode,

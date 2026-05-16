@@ -115,13 +115,20 @@ export function isToolCall(o: OutputItem): o is ToolCallItem {
   return o.kind === 'function_call' || o.kind === 'custom_tool_call';
 }
 
-export interface Turn {
+/** One HTTP sampling roundtrip with the model: a single `response.create`
+ *  out, the streamed event sequence back, and the final `response.completed`.
+ *
+ *  Note this is NOT a codex-core "turn" — a turn (per `wiki/operations/turn-loop.md`)
+ *  is one user submission, which can span many of these requests when the
+ *  model emits function calls and codex sends the results back for another
+ *  sampling pass. Each row in the viewer is exactly one such request. */
+export interface Request {
   index: number;
   startTs: number;
   endTs?: number;
   durationMs?: number;
   /** Time from `sent` response.create → first `output_item.added` or first delta.
-   *  Misleading on reasoning-heavy turns: a reasoning item's `output_item.added`
+   *  Misleading on reasoning-heavy requests: a reasoning item's `output_item.added`
    *  fires early even though the wire stays silent for seconds while reasoning
    *  tokens are generated server-side. Pair with `ttfvbMs` for the honest read. */
   ttftMs?: number;
@@ -130,11 +137,11 @@ export interface Turn {
    *  the reasoning placeholder, so on reasoning models this captures real
    *  user-perceived "time until I see something". */
   ttfvbMs?: number;
-  /** True when the turn was never followed by a response.completed in the dump. */
+  /** True when the request was never followed by a response.completed in the dump. */
   interrupted?: boolean;
   /** Full `response.create` body. */
-  request: any;
-  /** All events belonging to this turn (including the sent). */
+  requestBody: any;
+  /** All events belonging to this request (including the sent). */
   events: WsEvent[];
   outputs: OutputItem[];
   /** Total streamed text-delta bytes. */
@@ -156,13 +163,13 @@ export interface TokenUsage {
 
 export interface Session {
   manifest: Manifest;
-  turns: Turn[];
+  requests: Request[];
   httpCalls: HttpCall[];
   wsEvents: WsEvent[];
   /** Raw text of ws-events.ndjson for download links (kept small refs only). */
   hasWsEvents: boolean;
   /** Files in the folder (debug / "what was found"). */
   files: Array<{ name: string; size: number }>;
-  /** Total duration across all turns (ms). */
+  /** Total duration across all requests (ms). */
   totalDurationMs: number;
 }

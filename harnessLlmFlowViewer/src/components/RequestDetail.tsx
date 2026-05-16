@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Turn, OutputItem, WsEvent } from '../types';
+import { Request, OutputItem, WsEvent } from '../types';
 import { fmtBytes, fmtClock, fmtDurationMs, fmtNumber } from '../lib/format';
 import { stringifyToolOutput } from '../lib/toolOutput';
 import { Stat } from './Stat';
@@ -8,12 +8,12 @@ import { Copyable } from './Copyable';
 import { ExpandableValue } from './ExpandableValue';
 
 interface Props {
-  turn: Turn;
+  request: Request;
   manifestStartedAtMs: number;
 }
 
-export function TurnDetail({ turn, manifestStartedAtMs }: Props) {
-  const req = turn.request as any;
+export function RequestDetail({ request, manifestStartedAtMs }: Props) {
+  const req = request.requestBody as any;
   const inputCount = Array.isArray(req?.input) ? req.input.length : 0;
   const toolCount = Array.isArray(req?.tools) ? req.tools.length : 0;
   const instrLen = typeof req?.instructions === 'string' ? req.instructions.length : 0;
@@ -22,30 +22,30 @@ export function TurnDetail({ turn, manifestStartedAtMs }: Props) {
     <div className="p-6 space-y-6 overflow-y-auto">
       <div>
         <h2 className="text-xl font-semibold">
-          Turn {turn.index}
+          Request {request.index}
           <span className="ml-3 text-ink-400 text-sm font-normal">
-            started at {fmtClock(turn.startTs)} · +
-            {fmtDurationMs(turn.startTs - manifestStartedAtMs)} from session start
+            started at {fmtClock(request.startTs)} · +
+            {fmtDurationMs(request.startTs - manifestStartedAtMs)} from session start
           </span>
         </h2>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Stat label="Duration" value={fmtDurationMs(turn.durationMs)} />
+        <Stat label="Duration" value={fmtDurationMs(request.durationMs)} />
         <Stat
           label="Time to first item"
-          value={fmtDurationMs(turn.ttftMs)}
+          value={fmtDurationMs(request.ttftMs)}
           accent="recv"
           hint="first output_item.added"
         />
         <Stat
           label="Time to first visible byte"
-          value={fmtDurationMs(turn.ttfvbMs)}
+          value={fmtDurationMs(request.ttfvbMs)}
           accent="recv"
           hint="first text / args delta"
         />
-        <Stat label="Text delta bytes" value={fmtBytes(turn.textDeltaBytes)} accent="text" />
-        <Stat label="Total tokens" value={fmtNumber(turn.usage?.total_tokens)} />
+        <Stat label="Text delta bytes" value={fmtBytes(request.textDeltaBytes)} accent="text" />
+        <Stat label="Total tokens" value={fmtNumber(request.usage?.total_tokens)} />
       </div>
 
       <Section title="Outbound · response.create" icon="↑" accent="sent">
@@ -58,46 +58,46 @@ export function TurnDetail({ turn, manifestStartedAtMs }: Props) {
         <RequestSummary req={req} />
       </Section>
 
-      <Section title={`Output (${turn.outputs.length})`} icon="↓" accent="recv">
+      <Section title={`Output (${request.outputs.length})`} icon="↓" accent="recv">
         <ul className="space-y-3">
-          {turn.outputs.map(o => (
-            <OutputCard key={o.itemId} item={o} startTs={turn.startTs} />
+          {request.outputs.map(o => (
+            <OutputCard key={o.itemId} item={o} startTs={request.startTs} />
           ))}
-          {turn.outputs.length === 0 && (
+          {request.outputs.length === 0 && (
             <li className="text-ink-400 italic">No output items recorded.</li>
           )}
         </ul>
       </Section>
 
-      {turn.usage && (
+      {request.usage && (
         <Section title="Token usage" icon="🪙">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <Stat label="Input" value={fmtNumber(turn.usage.input_tokens)} />
-            <Stat label="Cached" value={fmtNumber(turn.usage.input_cached_tokens)} />
-            <Stat label="Output" value={fmtNumber(turn.usage.output_tokens)} />
-            <Stat label="Reasoning" value={fmtNumber(turn.usage.reasoning_tokens)} />
-            <Stat label="Total" value={fmtNumber(turn.usage.total_tokens)} />
+            <Stat label="Input" value={fmtNumber(request.usage.input_tokens)} />
+            <Stat label="Cached" value={fmtNumber(request.usage.input_cached_tokens)} />
+            <Stat label="Output" value={fmtNumber(request.usage.output_tokens)} />
+            <Stat label="Reasoning" value={fmtNumber(request.usage.reasoning_tokens)} />
+            <Stat label="Total" value={fmtNumber(request.usage.total_tokens)} />
           </div>
         </Section>
       )}
 
-      {turn.rateLimits && (
+      {request.rateLimits && (
         <Section title="Rate limits" icon="⏱">
-          <JsonView data={turn.rateLimits} />
+          <JsonView data={request.rateLimits} />
         </Section>
       )}
 
-      <Section title={`Raw events in this turn (${turn.events.length})`} icon="🪵" defaultOpen={false}>
-        <EventList events={turn.events} startTs={turn.startTs} />
+      <Section title={`Raw events in this request (${request.events.length})`} icon="🪵" defaultOpen={false}>
+        <EventList events={request.events} startTs={request.startTs} />
       </Section>
 
       <Section title="Full response.create body" icon="📤" defaultOpen={false}>
-        <JsonView data={turn.request} />
+        <JsonView data={request.requestBody} />
       </Section>
 
-      {turn.completed && (
+      {request.completed && (
         <Section title="Full response.completed body" icon="🏁" defaultOpen={false}>
-          <JsonView data={turn.completed} />
+          <JsonView data={request.completed} />
         </Section>
       )}
     </div>

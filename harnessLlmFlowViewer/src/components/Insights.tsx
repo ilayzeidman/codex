@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
 import { Session, isToolCall } from '../types';
 import { fmtDurationMs, fmtNumber, truncate } from '../lib/format';
-import { computeSessionInsights, FailureCluster, RepeatCommandGroup, TurnTimeBreakdown } from '../lib/sessionInsights';
+import { computeSessionInsights, FailureCluster, RepeatCommandGroup, RequestTimeBreakdown } from '../lib/sessionInsights';
 
 interface Props {
   session: Session;
 }
 
 export function Insights({ session }: Props) {
-  const turns = session.turns;
+  const requests = session.requests;
   const insights = useMemo(() => computeSessionInsights(session), [session]);
 
   const eventHistogram = useMemo(() => {
@@ -22,8 +22,8 @@ export function Insights({ session }: Props) {
 
   const toolHistogram = useMemo(() => {
     const m = new Map<string, number>();
-    for (const t of turns) {
-      for (const o of t.outputs) {
+    for (const r of requests) {
+      for (const o of r.outputs) {
         if (isToolCall(o)) {
           // Distinguish custom tools so apply_patch doesn't blend with a JSON
           // tool named "apply_patch" (if one ever existed).
@@ -33,30 +33,30 @@ export function Insights({ session }: Props) {
       }
     }
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [turns]);
+  }, [requests]);
 
   const maxEventCount = eventHistogram[0]?.[1] ?? 1;
   const maxToolCount = toolHistogram[0]?.[1] ?? 1;
-  const { maxTurnDur, maxTokens } = useMemo(() => {
+  const { maxRequestDur, maxTokens } = useMemo(() => {
     let dur = 1;
     let tok = 1;
-    for (const t of turns) {
-      const d = t.durationMs ?? 0;
-      const k = t.usage?.total_tokens ?? 0;
+    for (const r of requests) {
+      const d = r.durationMs ?? 0;
+      const k = r.usage?.total_tokens ?? 0;
       if (d > dur) dur = d;
       if (k > tok) tok = k;
     }
-    return { maxTurnDur: dur, maxTokens: tok };
-  }, [turns]);
+    return { maxRequestDur: dur, maxTokens: tok };
+  }, [requests]);
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto">
       <Section title="Where did wall-clock time go?">
         <p className="text-ink-400 text-sm mb-4">
           <span className="text-accent-text">{fmtDurationMs(insights.wallClockMs)}</span> total ·
-          <span className="ml-2 text-ink-200">{fmtDurationMs(insights.activeApiMs)} inside model turns</span> ·
+          <span className="ml-2 text-ink-200">{fmtDurationMs(insights.activeApiMs)} inside model requests</span> ·
           <span className="ml-2 text-amber-300">
-            {fmtDurationMs(insights.outOfApiMs)} between turns
+            {fmtDurationMs(insights.outOfApiMs)} between requests
           </span>{' '}
           (local tool execution, sandbox approvals, idle).
         </p>
@@ -68,14 +68,14 @@ export function Insights({ session }: Props) {
         />
       </Section>
 
-      <Section title="Per-turn time breakdown (reasoning vs streaming)">
+      <Section title="Per-request time breakdown (reasoning vs streaming)">
         <p className="text-ink-400 text-sm mb-4">
-          Within each turn: the API stays silent while server-side reasoning runs (
+          Within each request: the API stays silent while server-side reasoning runs (
           <span className="text-ink-200">grey</span>), then visible bytes stream (
-          <span className="text-accent-recv">green</span>). A turn dominated by grey means the model
+          <span className="text-accent-recv">green</span>). A request dominated by grey means the model
           spent its time "thinking" — usually a sign it lacked the local context to act decisively.
         </p>
-        <TurnBreakdownChart breakdowns={insights.turnBreakdown} />
+        <RequestBreakdownChart breakdowns={insights.requestBreakdown} />
       </Section>
 
       {insights.failureClusters.length > 0 && (
@@ -91,7 +91,7 @@ export function Insights({ session }: Props) {
       {insights.repeats.length > 0 && (
         <Section title={`Repeat commands (${insights.repeats.length})`}>
           <p className="text-ink-400 text-sm mb-4">
-            Commands grouped by their leading verb + first argument. Each row shows every turn that
+            Commands grouped by their leading verb + first argument. Each row shows every request that
             ran a near-identical command — useful for spotting redundant probes ({' '}
             <span className="text-ink-200">npm run build × 3</span>,{' '}
             <span className="text-ink-200">Get-Content App.tsx × 2</span>, …).
@@ -100,26 +100,26 @@ export function Insights({ session }: Props) {
         </Section>
       )}
 
-      <Section title="Per-turn duration vs tokens">
+      <Section title="Per-request duration vs tokens">
         <p className="text-ink-400 text-sm mb-4">
           Top bar = wall-clock duration of the round-trip. Bottom bar = total tokens reported in the
           <code className="text-ink-200 mx-1">response.completed.usage</code> object.
         </p>
         <div className="space-y-3">
-          {turns.map(t => (
-            <div key={t.index} className="grid grid-cols-12 gap-2 items-center text-xs">
-              <div className="col-span-1 text-ink-400 text-right">T{t.index}</div>
+          {requests.map(r => (
+            <div key={r.index} className="grid grid-cols-12 gap-2 items-center text-xs">
+              <div className="col-span-1 text-ink-400 text-right">R{r.index}</div>
               <div className="col-span-11 space-y-1">
                 <div className="relative h-5 bg-ink-900 rounded border border-ink-700 overflow-hidden">
                   <div
                     className="absolute inset-y-0 left-0 bg-accent-recv/30 border-r border-accent-recv/60"
-                    style={{ width: `${((t.durationMs ?? 0) / maxTurnDur) * 100}%` }}
+                    style={{ width: `${((r.durationMs ?? 0) / maxRequestDur) * 100}%` }}
                   />
                   <span className="absolute inset-0 flex items-center px-2 font-mono text-ink-200">
-                    {fmtDurationMs(t.durationMs)} · ttft {fmtDurationMs(t.ttftMs)}
-                    {t.ttfvbMs !== undefined && t.ttfvbMs !== t.ttftMs && (
+                    {fmtDurationMs(r.durationMs)} · ttft {fmtDurationMs(r.ttftMs)}
+                    {r.ttfvbMs !== undefined && r.ttfvbMs !== r.ttftMs && (
                       <span className="ml-2 text-ink-500">
-                        · ttfvb {fmtDurationMs(t.ttfvbMs)}
+                        · ttfvb {fmtDurationMs(r.ttfvbMs)}
                       </span>
                     )}
                   </span>
@@ -128,14 +128,14 @@ export function Insights({ session }: Props) {
                   <div
                     className="absolute inset-y-0 left-0 bg-accent-text/30 border-r border-accent-text/60"
                     style={{
-                      width: `${((t.usage?.total_tokens ?? 0) / maxTokens) * 100}%`,
+                      width: `${((r.usage?.total_tokens ?? 0) / maxTokens) * 100}%`,
                     }}
                   />
                   <span className="absolute inset-0 flex items-center px-2 font-mono text-ink-200">
-                    {fmtNumber(t.usage?.total_tokens)} tok
-                    {t.usage?.reasoning_tokens !== undefined && t.usage.reasoning_tokens > 0 && (
+                    {fmtNumber(r.usage?.total_tokens)} tok
+                    {r.usage?.reasoning_tokens !== undefined && r.usage.reasoning_tokens > 0 && (
                       <span className="ml-3 text-ink-500">
-                        ({fmtNumber(t.usage.reasoning_tokens)} reasoning)
+                        ({fmtNumber(r.usage.reasoning_tokens)} reasoning)
                       </span>
                     )}
                   </span>
@@ -254,7 +254,7 @@ function WallClockBar({
             style={{ width: `${pct(outOfApiMs)}%` }}
             title={`Out-of-API (local tool exec, idle) ${fmtDurationMs(outOfApiMs)}`}
           >
-            {pct(outOfApiMs) > 8 ? `between turns ${fmtDurationMs(outOfApiMs)}` : ''}
+            {pct(outOfApiMs) > 8 ? `between requests ${fmtDurationMs(outOfApiMs)}` : ''}
           </div>
         )}
       </div>
@@ -262,7 +262,7 @@ function WallClockBar({
         <LegendChip color="bg-ink-500/60" label={`reasoning ${fmtDurationMs(reasoningMs)}`} />
         <LegendChip color="bg-accent-recv/40" label={`streaming ${fmtDurationMs(streamingMs)}`} />
         <LegendChip color="bg-accent-text/30" label={`other api ${fmtDurationMs(otherApi)}`} />
-        <LegendChip color="bg-amber-500/30" label={`between turns ${fmtDurationMs(outOfApiMs)}`} />
+        <LegendChip color="bg-amber-500/30" label={`between requests ${fmtDurationMs(outOfApiMs)}`} />
       </div>
     </div>
   );
@@ -277,7 +277,7 @@ function LegendChip({ color, label }: { color: string; label: string }) {
   );
 }
 
-function TurnBreakdownChart({ breakdowns }: { breakdowns: TurnTimeBreakdown[] }) {
+function RequestBreakdownChart({ breakdowns }: { breakdowns: RequestTimeBreakdown[] }) {
   const max = Math.max(1, ...breakdowns.map(b => b.totalMs));
   return (
     <div className="space-y-1.5">
@@ -287,7 +287,7 @@ function TurnBreakdownChart({ breakdowns }: { breakdowns: TurnTimeBreakdown[] })
         const stream = (b.streamingMs / max) * 100;
         return (
           <div key={b.index} className="grid grid-cols-12 gap-2 items-center text-xs">
-            <div className="col-span-1 text-right text-ink-400 font-mono">T{b.index}</div>
+            <div className="col-span-1 text-right text-ink-400 font-mono">R{b.index}</div>
             <div className="col-span-10 relative h-5 bg-ink-900 rounded border border-ink-700 overflow-hidden flex">
               <div
                 className="bg-accent-text/40 border-r border-ink-700"
@@ -353,9 +353,9 @@ function FailureClusterList({ clusters }: { clusters: FailureCluster[] }) {
               <span className="font-semibold">{c.count}</span>
               <span className="text-ink-400"> occurrence{c.count === 1 ? '' : 's'}</span>
               <span className="text-ink-500 ml-2 font-mono text-[11px]">
-                turn{c.sampleTurns.length === 1 ? '' : 's'}{' '}
-                {c.sampleTurns.join(', ')}
-                {c.count > c.sampleTurns.length && '…'}
+                request{c.sampleRequests.length === 1 ? '' : 's'}{' '}
+                {c.sampleRequests.join(', ')}
+                {c.count > c.sampleRequests.length && '…'}
               </span>
             </div>
             {c.sampleMessage && (
@@ -407,7 +407,7 @@ function RepeatCommandList({ repeats }: { repeats: RepeatCommandGroup[] }) {
                   className={`text-[11px] font-mono px-1.5 py-0.5 rounded border ${tone}`}
                   title={o.exitCode !== undefined ? `exit ${o.exitCode}` : undefined}
                 >
-                  {icon} Turn {o.turnIndex}
+                  {icon} Request {o.requestIndex}
                   {o.exitCode !== undefined && o.exitCode !== 0 && (
                     <span className="text-ink-500"> · {o.exitCode}</span>
                   )}
